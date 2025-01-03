@@ -2,7 +2,7 @@ package pleaseload;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
-import java.io.File;
+import java.io.File; 
 import java.io.IOException;
 import com.github.psambit9791.jdsp.filter.Butterworth;
 
@@ -10,7 +10,7 @@ public class AudioProcessor {
 
     static EQGUI eq = new EQGUI();
 
-    public static void playAudioWithEQ(float bassGain, float midGain, float trebleGain, VisualizerPanel visualizer) {
+    public static void playAudioWithEQ(float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer) {
         JFileChooser fileChooser = new JFileChooser();
         int result = fileChooser.showOpenDialog(null);
         if (result != JFileChooser.APPROVE_OPTION) {
@@ -18,6 +18,8 @@ public class AudioProcessor {
         }
     
         File audioFile = fileChooser.getSelectedFile();
+        float[] gains = new float[] {initialBassGain, initialMidGain, initialTrebleGain};
+
         new Thread(() -> {
             try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile)) {
                 AudioFormat format = audioInputStream.getFormat();
@@ -33,15 +35,19 @@ public class AudioProcessor {
     
                 byte[] buffer = new byte[4096];
                 int bytesRead;
-                int numBars = 50;
+                int numBars = 3;
     
                 while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
                     // Update visualizer
                     int[] barHeights = calculateBarHeights(buffer, numBars);
                     SwingUtilities.invokeLater(() -> visualizer.updateVisualizer(barHeights));
+                    
+                    gains[0] = eq.getBassSliderValue();
+                    gains[1] = eq.getMidSliderValue();
+                    gains[2] = eq.getTrebleSliderValue();
     
-                    // Apply EQ and play audio
-                    byte[] adjustedBuffer = applyEQ(buffer, format, bassGain, midGain, trebleGain);
+                    // Apply EQ to the current buffer
+                    byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
                     line.write(adjustedBuffer, 0, bytesRead);
                 }
     

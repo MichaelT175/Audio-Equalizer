@@ -12,13 +12,13 @@ public class EQGUI {
     static int min = -20;
 
     static JLabel bassLabel = new JLabel("Bass:");
-    static JSlider bassSlider = new JSlider(min, max, 0);
+    static JSlider bassSlider = new JSlider(JSlider.VERTICAL, min, max, 0);
 
     static JLabel midLabel = new JLabel("Mid:");
-    static JSlider midSlider = new JSlider(min, max, 0);
+    static JSlider midSlider = new JSlider(JSlider.VERTICAL, min, max, 0);
 
     static JLabel trebleLabel = new JLabel("Treble:");
-    static JSlider trebleSlider = new JSlider(min, max, 0);
+    static JSlider trebleSlider = new JSlider(JSlider.VERTICAL, min, max, 0);
     
     public static void createAndShowGUI() {
         JFrame frame = new JFrame("Audio Equalizer");
@@ -29,63 +29,68 @@ public class EQGUI {
         panel.setLayout(new BorderLayout());
     
         // Create visualizer panel
-        VisualizerPanel visualizer = new VisualizerPanel(3); // 50 bars
+        VisualizerPanel visualizer = new VisualizerPanel(3);
         visualizer.setPreferredSize(new Dimension(800, 200));
     
+        // Controls panel with vertical sliders
         JPanel controlsPanel = new JPanel();
-        controlsPanel.setLayout(new GridLayout(4, 2));
+        controlsPanel.setLayout(new BoxLayout(controlsPanel, BoxLayout.X_AXIS));
     
-        // Add sliders and play button
-        bassSlider.setMajorTickSpacing(5);
-        bassSlider.setPaintTicks(true);
-        bassSlider.setPaintLabels(true);
-        bassSlider.addChangeListener(e -> bassGain = bassSlider.getValue());
+        // Create slider panels for better alignment
+        JPanel bassPanel = createSliderPanel(bassLabel, bassSlider);
+        JPanel midPanel = createSliderPanel(midLabel, midSlider);
+        JPanel treblePanel = createSliderPanel(trebleLabel, trebleSlider);
     
-        midSlider.setMajorTickSpacing(5);
-        midSlider.setPaintTicks(true);
-        midSlider.setPaintLabels(true);
-        midSlider.addChangeListener(e -> midGain = midSlider.getValue());
-    
-        trebleSlider.setMajorTickSpacing(5);
-        trebleSlider.setPaintTicks(true);
-        trebleSlider.setPaintLabels(true);
-        trebleSlider.addChangeListener(e -> trebleGain = trebleSlider.getValue());
-    
+        // Add play button
         JButton playButton = new JButton("Play");
         playButton.addActionListener(e -> {
             // Play audio and update visualizer in real-time
             new Thread(() -> AudioProcessor.playAudioWithEQ(bassGain, midGain, trebleGain, visualizer)).start();
         });
-    
-        controlsPanel.add(bassLabel);
-        controlsPanel.add(bassSlider);
-        controlsPanel.add(midLabel);
-        controlsPanel.add(midSlider);
-        controlsPanel.add(trebleLabel);
-        controlsPanel.add(trebleSlider);
+
+        // Add slider panels and button to the controls panel
+        controlsPanel.add(bassPanel);
+        controlsPanel.add(Box.createRigidArea(new Dimension(10, 0))); // Add some spacing
+        controlsPanel.add(midPanel);
+        controlsPanel.add(Box.createRigidArea(new Dimension(10, 0))); // Add some spacing
+        controlsPanel.add(treblePanel);
+        controlsPanel.add(Box.createRigidArea(new Dimension(10, 0))); // Add spacing for aesthetics
         controlsPanel.add(playButton);
     
-        panel.add(visualizer, BorderLayout.NORTH);
-        panel.add(controlsPanel, BorderLayout.CENTER);
+        panel.add(visualizer, BorderLayout.NORTH); // Visualizer at the top
+        panel.add(controlsPanel, BorderLayout.CENTER); // Controls in the center
     
         frame.add(panel);
         frame.setVisible(true);
     }
     
-    //Get Values from sliders
-    public float getBassSliderValue(){
+    // Helper method to create a panel for each slider
+    private static JPanel createSliderPanel(JLabel label, JSlider slider) {
+        JPanel sliderPanel = new JPanel();
+        sliderPanel.setLayout(new BoxLayout(sliderPanel, BoxLayout.Y_AXIS));
+        label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        slider.setAlignmentX(Component.CENTER_ALIGNMENT);
+        slider.setMajorTickSpacing(10);
+        slider.setPaintTicks(true);
+        slider.setPaintLabels(true);
+        sliderPanel.add(label);
+        sliderPanel.add(slider);
+        return sliderPanel;
+    }
+
+    // Get Values from sliders
+    public float getBassSliderValue() {
         bassSlider.addChangeListener(e -> bassGain = bassSlider.getValue());
         return bassGain;
     }
 
-    public float getMidSliderValue(){
+    public float getMidSliderValue() {
         midSlider.addChangeListener(e -> midGain = midSlider.getValue());
         return midGain;
     }
 
-    public float getTrebleSliderValue(){
+    public float getTrebleSliderValue() {
         trebleSlider.addChangeListener(e -> trebleGain = trebleSlider.getValue());
         return trebleGain;
     }
 }
-
