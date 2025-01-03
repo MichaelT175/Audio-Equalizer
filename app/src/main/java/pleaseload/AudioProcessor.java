@@ -2,9 +2,13 @@ package pleaseload;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
+
+import org.checkerframework.checker.units.qual.h;
+
 import java.io.File; 
 import java.io.IOException;
 import com.github.psambit9791.jdsp.filter.Butterworth;
+import com.github.psambit9791.jdsp.transform.FastFourier;
 
 public class AudioProcessor {
 
@@ -38,16 +42,14 @@ public class AudioProcessor {
                 int numBars = 3;
     
                 while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
-                    // Update visualizer
-                    int[] barHeights = calculateBarHeights(buffer, numBars);
-                    SwingUtilities.invokeLater(() -> visualizer.updateVisualizer(barHeights));
-                    
                     gains[0] = eq.getBassSliderValue();
                     gains[1] = eq.getMidSliderValue();
                     gains[2] = eq.getTrebleSliderValue();
     
                     // Apply EQ to the current buffer
                     byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
+                    int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format);
+                    SwingUtilities.invokeLater(() -> visualizer.updateVisualizer(barHeights));
                     line.write(adjustedBuffer, 0, bytesRead);
                 }
     
@@ -59,20 +61,36 @@ public class AudioProcessor {
         }).start();
     }
     
-    private static int[] calculateBarHeights(byte[] buffer, int numBars) {
+    private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format) {
+
+        double[] newBuffer = byteToDouble(buffer, format);
+
+        FastFourier fft = new FastFourier(newBuffer);
+
+        fft.transform();
+        double[] perFreqMagnitude = fft.getMagnitude(true);
+        int numBinsPerBar = perFreqMagnitude.length/numBars;
+
         int[] heights = new int[numBars];
+
         for (int i = 0; i < heights.length; i++) {
-            heights[i] = (int) (Math.random() * 200); // Replace with real amplitude or frequency data
+            double barWeight = 0;
+            int start = i * numBinsPerBar + 1;
+            int end = (i+1) * numBinsPerBar;
+            for(int j = start; j < end; j++){
+                barWeight += perFreqMagnitude[j];
+            }
+            heights[i] = (int)(barWeight);
+            System.out.println(heights[i]);
         }
+
         return heights;
     }    
     
-    private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
+    private static double[] byteToDouble(byte[] buffer, AudioFormat format){
         int sampleSizeInBytes = format.getSampleSizeInBits() / 8;
         boolean isBigEndian = format.isBigEndian();
-        float sampleRate = format.getSampleRate();
 
-        // Convert byte buffer to double array
         double[] audioData = new double[buffer.length / sampleSizeInBytes];
         for (int i = 0; i < audioData.length; i++) {
             int sampleIndex = i * sampleSizeInBytes;
@@ -90,6 +108,42 @@ public class AudioProcessor {
 
             audioData[i] = sample / 32768.0; // Normalize to -1.0 to 1.0
         }
+        return audioData;
+    }
+
+    private static byte[] doubleToByte(double[] combined, AudioFormat format, byte[] buffer){
+        
+        int sampleSizeInBytes = format.getSampleSizeInBits() / 8;
+        boolean isBigEndian = format.isBigEndian();
+
+        byte[] outputBuffer = new byte[buffer.length];
+        for (int i = 0; i < combined.length; i++) {
+            int sample = (int) (combined[i] * 32768);
+            sample = Math.max(-32768, Math.min(32767, sample));
+
+            int sampleIndex = i * sampleSizeInBytes;
+            if (sampleSizeInBytes == 2) {
+                if (isBigEndian) {
+                    outputBuffer[sampleIndex] = (byte) (sample >> 8);
+                    outputBuffer[sampleIndex + 1] = (byte) sample;
+                } else {
+                    outputBuffer[sampleIndex] = (byte) sample;
+                    outputBuffer[sampleIndex + 1] = (byte) (sample >> 8);
+                }
+            } else if (sampleSizeInBytes == 1) {
+                outputBuffer[sampleIndex] = (byte) sample;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+
+    private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
+        float sampleRate = format.getSampleRate();
+        
+        // Convert byte buffer to double array
+        double[] audioData = byteToDouble(buffer, format);
         
         // Apply Butterworth filters
         Butterworth butterworth = new Butterworth(sampleRate);
@@ -121,24 +175,7 @@ public class AudioProcessor {
         }
 
         // Convert double array back to byte buffer
-        byte[] outputBuffer = new byte[buffer.length];
-        for (int i = 0; i < combined.length; i++) {
-            int sample = (int) (combined[i] * 32768);
-            sample = Math.max(-32768, Math.min(32767, sample));
-
-            int sampleIndex = i * sampleSizeInBytes;
-            if (sampleSizeInBytes == 2) {
-                if (isBigEndian) {
-                    outputBuffer[sampleIndex] = (byte) (sample >> 8);
-                    outputBuffer[sampleIndex + 1] = (byte) sample;
-                } else {
-                    outputBuffer[sampleIndex] = (byte) sample;
-                    outputBuffer[sampleIndex + 1] = (byte) (sample >> 8);
-                }
-            } else if (sampleSizeInBytes == 1) {
-                outputBuffer[sampleIndex] = (byte) sample;
-            }
-        }
+        byte[] outputBuffer = doubleToByte(combined, format, buffer);
 
         return outputBuffer;
     }
