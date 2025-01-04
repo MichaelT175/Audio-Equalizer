@@ -2,9 +2,6 @@ package pleaseload;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
-
-import org.checkerframework.checker.units.qual.h;
-
 import java.io.File; 
 import java.io.IOException;
 import com.github.psambit9791.jdsp.filter.Butterworth;
@@ -39,7 +36,7 @@ public class AudioProcessor {
     
                 byte[] buffer = new byte[4096];
                 int bytesRead;
-                int numBars = 3;
+                int numBars = 10;
     
                 while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
                     gains[0] = eq.getBassSliderValue();
