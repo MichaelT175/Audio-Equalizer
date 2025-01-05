@@ -27,6 +27,11 @@ public class EQGUI {
     static JComboBox<String> songDropdown;
 
     public static void createAndShowGUI() {
+
+        // Custom colors
+        Color lightPurple = new Color(200, 172, 214);
+        Color purple = new Color(23, 21, 59);
+        
         // Populate the song map with file paths
         songMap.put("Imperial March", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\ImperialMarch60.wav");
         songMap.put("Star Wars", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\StarWars60.wav");
@@ -41,14 +46,22 @@ public class EQGUI {
         panel.setLayout(new BorderLayout());
 
         // Title label
-        JLabel titleLabel = new JLabel("Audio Equalizer + Visualizer", JLabel.CENTER);
+        JLabel titleLabel = new JLabel("AUDIO EQUALIZER + VISUALIZER", JLabel.CENTER);
         titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+        titleLabel.setForeground(Color.WHITE);
         panel.add(titleLabel, BorderLayout.NORTH);
 
         // Create visualizer panel
         VisualizerPanel visualizer = new VisualizerPanel(3);
         visualizer.setPreferredSize(new Dimension(800, 200));
+        visualizer.setBackground(new Color(23, 21, 59));;
         panel.add(visualizer, BorderLayout.CENTER);
+
+        // Create spectrum panel
+        SpectrumPanel spectrumPanel = new SpectrumPanel(1024); // Adjust number of bins as needed
+        spectrumPanel.setPreferredSize(new Dimension(800, 200));
+        panel.add(spectrumPanel, BorderLayout.NORTH);
+
 
         // Controls panel with sliders side by side
         JPanel controlsPanel = new JPanel();
@@ -74,7 +87,7 @@ public class EQGUI {
             String selectedSong = (String) songDropdown.getSelectedItem();
             if (selectedSong != null) {
                 String filePath = songMap.get(selectedSong);
-                new Thread(() -> AudioProcessor.playAudioWithEQ(filePath, bassGain, midGain, trebleGain, visualizer)).start();
+                new Thread(() -> AudioProcessor.playAudioWithEQ(filePath, bassGain, midGain, trebleGain, visualizer, spectrumPanel)).start();
             }
         });
 
@@ -83,6 +96,25 @@ public class EQGUI {
         bottomPanel.add(playButton);
 
         panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        // Set background color for components
+        panel.setBackground(purple);
+        bassPanel.setBackground(purple);
+        bassSlider.setBackground(purple);
+        midPanel.setBackground(purple);
+        midSlider.setBackground(purple);
+        treblePanel.setBackground(purple);
+        trebleSlider.setBackground(purple);
+        controlsPanel.setBackground(purple);
+        songDropdown.setBackground(purple);
+        playButton.setBackground(purple);
+
+        // Customize text and border colors
+        bassSlider.setForeground(Color.WHITE);
+        midSlider.setForeground(Color.WHITE);
+        trebleSlider.setForeground(Color.WHITE);
+        songDropdown.setForeground(Color.WHITE);
+        playButton.setForeground(Color.WHITE);
 
         frame.add(panel);
         frame.setVisible(true);
@@ -99,6 +131,7 @@ public class EQGUI {
         slider.setPaintLabels(true);
         sliderPanel.add(label);
         sliderPanel.add(slider);
+        label.setForeground(Color.WHITE);
         return sliderPanel;
     }
 

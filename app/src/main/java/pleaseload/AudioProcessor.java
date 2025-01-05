@@ -11,7 +11,7 @@ public class AudioProcessor {
 
     static EQGUI eq = new EQGUI();
 
-    public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer) {
+    public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer, SpectrumPanel sPanel) {
         File audioFile = new File(filePath);
         if (!audioFile.exists()) {
             System.out.println("Error: File not found at " + filePath);
@@ -44,9 +44,13 @@ public class AudioProcessor {
     
                     // Apply EQ to the current buffer
                     byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
-                    int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format);
+                    int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format, sPanel);
+
                     SwingUtilities.invokeLater(() -> visualizer.updateVisualizer(barHeights));
+                    SwingUtilities.invokeLater(() -> sPanel.updateSpectrum(notSorted(buffer, numBars, format)));
+                    //SwingUtilities.invokeLater(() -> sPanel.updateSpectrum(byteToDouble(buffer, format)));
                     line.write(adjustedBuffer, 0, bytesRead);
+
                 }
     
                 line.drain();
@@ -56,32 +60,39 @@ public class AudioProcessor {
             }
         }).start();
     }
-    
-    private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format) {
 
+    private static double[] notSorted(byte[] buffer, int numBars, AudioFormat format){
         double[] newBuffer = byteToDouble(buffer, format);
-
+    
         FastFourier fft = new FastFourier(newBuffer);
-
         fft.transform();
         double[] perFreqMagnitude = fft.getMagnitude(true);
-        int numBinsPerBar = perFreqMagnitude.length/numBars;
-
+        return perFreqMagnitude;
+    }
+    
+    private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format, SpectrumPanel spectrumPanel) {
+        double[] newBuffer = byteToDouble(buffer, format);
+    
+        FastFourier fft = new FastFourier(newBuffer);
+        fft.transform();
+        double[] perFreqMagnitude = fft.getMagnitude(true);
+    
+        int numBinsPerBar = perFreqMagnitude.length / numBars;
         int[] heights = new int[numBars];
-
+    
         for (int i = 0; i < heights.length; i++) {
             double barWeight = 0;
-            int start = i * numBinsPerBar + 1;
-            int end = (i+1) * numBinsPerBar;
-            for(int j = start; j < end; j++){
+            int start = i * numBinsPerBar;
+            int end = (i + 1) * numBinsPerBar;
+            for (int j = start; j < end; j++) {
                 barWeight += perFreqMagnitude[j];
             }
-            heights[i] = (int)(barWeight);
-            System.out.println(heights[i]);
+            heights[i] = (int) (barWeight);
         }
-
+    
         return heights;
-    }    
+    }
+    
     
     private static double[] byteToDouble(byte[] buffer, AudioFormat format){
         int sampleSizeInBytes = format.getSampleSizeInBits() / 8;
