@@ -11,6 +11,8 @@ public class AudioProcessor {
 
     static EQGUI eq = new EQGUI();
 
+    private static boolean stopPlayback = false;
+
     public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer, SpectrumPanel sPanel) {
         File audioFile = new File(filePath);
         if (!audioFile.exists()) {
@@ -38,6 +40,11 @@ public class AudioProcessor {
                 int numBars = 10;
     
                 while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
+                    if (stopPlayback) {
+                        line.stop();
+                        line.close();
+                        break;
+                    }
                     gains[0] = eq.getBassSliderValue();
                     gains[1] = eq.getMidSliderValue();
                     gains[2] = eq.getTrebleSliderValue();
@@ -59,6 +66,10 @@ public class AudioProcessor {
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    public static void stopAudioPlayback(boolean stop) {
+        stopPlayback = stop;
     }
 
     private static double[] notSorted(byte[] buffer, int numBars, AudioFormat format){

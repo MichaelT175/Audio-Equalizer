@@ -21,57 +21,67 @@ public class EQGUI {
 
     static JLabel trebleLabel = new JLabel("Treble:");
     static JSlider trebleSlider = new JSlider(JSlider.VERTICAL, min, max, 0);
-    
-    // Song paths and dropdown menu
+
     static Map<String, String> songMap = new HashMap<>();
     static JComboBox<String> songDropdown;
 
     public static void createAndShowGUI() {
+        JFrame frame = setupMainFrame();
+        JPanel mainPanel = setupMainPanel();
 
-        // Custom colors
-        Color lightPurple = new Color(200, 172, 214);
-        Color purple = new Color(23, 21, 59);
-        
-        // Populate the song map with file paths
-        songMap.put("Imperial March", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\ImperialMarch60.wav");
-        songMap.put("Star Wars", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\StarWars60.wav");
-        songMap.put("Baby Elephant Walk", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\BabyElephantWalk60.wav");
-        songMap.put("Pink Panther", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\PinkPanther60.wav");
-        
+        // Visualizer and Spectrum Panels
+        JPanel centerPanel = setupCenterPanel();
+        mainPanel.add(centerPanel, BorderLayout.CENTER);
+
+        // Controls Panel
+        JPanel slidersPanel = setupSlidersPanel();
+        mainPanel.add(slidersPanel, BorderLayout.WEST);
+
+        // Bottom Panel for Song Selection and Play Button
+        JPanel bottomPanel = setupBottomPanel(centerPanel);
+        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+
+        frame.add(mainPanel);
+        frame.setVisible(true);
+    }
+
+    private static JFrame setupMainFrame() {
         JFrame frame = new JFrame("Audio Equalizer + Visualizer");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(800, 500);
+        return frame;
+    }
 
-        JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
+    private static JPanel setupMainPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(new Color(23, 21, 59));
 
-        // Title label
         JLabel titleLabel = new JLabel("AUDIO EQUALIZER + VISUALIZER", JLabel.CENTER);
         titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
         titleLabel.setForeground(Color.WHITE);
         panel.add(titleLabel, BorderLayout.NORTH);
 
-        // Create visualizer panel (bars)
+        return panel;
+    }
+
+    private static JPanel setupCenterPanel() {
         VisualizerPanel visualizer = new VisualizerPanel(3);
         visualizer.setPreferredSize(new Dimension(600, 100));
         visualizer.setBackground(new Color(23, 21, 59));
 
-        // Create spectrum panel
-        SpectrumPanel spectrumPanel = new SpectrumPanel(1024); // Adjust number of bins as needed
+        SpectrumPanel spectrumPanel = new SpectrumPanel(1024);
         spectrumPanel.setPreferredSize(new Dimension(600, 100));
         spectrumPanel.setBackground(new Color(23, 21, 59));
 
-        // Center panel to hold spectrum and bars
-        JPanel centerPanel = new JPanel();
-        centerPanel.setLayout(new BorderLayout());
+        JPanel centerPanel = new JPanel(new BorderLayout());
         centerPanel.add(spectrumPanel, BorderLayout.NORTH);
         centerPanel.add(visualizer, BorderLayout.CENTER);
-        
-        panel.add(centerPanel, BorderLayout.CENTER);
 
-        // Controls panel with sliders side by side
-        JPanel slidersPanel = new JPanel();
-        slidersPanel.setLayout(new GridLayout(1, 3, 10, 10)); // 1 row, 3 columns, with spacing
+        return centerPanel;
+    }
+
+    private static JPanel setupSlidersPanel() {
+        JPanel slidersPanel = new JPanel(new GridLayout(1, 3, 10, 10));
 
         JPanel bassPanel = createSliderPanel(bassLabel, bassSlider);
         JPanel midPanel = createSliderPanel(midLabel, midSlider);
@@ -81,69 +91,70 @@ public class EQGUI {
         slidersPanel.add(midPanel);
         slidersPanel.add(treblePanel);
 
-        panel.add(slidersPanel, BorderLayout.WEST);
+        slidersPanel.setBackground(new Color(23, 21, 59));
+        return slidersPanel;
+    }
 
+    private static JPanel setupBottomPanel(JPanel centerPanel) {
+        populateSongMap();
 
-        panel.add(slidersPanel, BorderLayout.WEST);
-
-        // Create the song dropdown menu
         songDropdown = new JComboBox<>(songMap.keySet().toArray(new String[0]));
+        songDropdown.setBackground(new Color(23, 21, 59));
+        songDropdown.setForeground(Color.WHITE);
 
-        // Add play button
         JButton playButton = new JButton("Play");
+        playButton.setBackground(new Color(23, 21, 59));
+        playButton.setForeground(Color.WHITE);
         playButton.addActionListener(e -> {
             String selectedSong = (String) songDropdown.getSelectedItem();
             if (selectedSong != null) {
                 String filePath = songMap.get(selectedSong);
-                new Thread(() -> AudioProcessor.playAudioWithEQ(filePath, bassGain, midGain, trebleGain, visualizer, spectrumPanel)).start();
+                new Thread(() -> AudioProcessor.playAudioWithEQ(filePath, bassGain, midGain, trebleGain, (VisualizerPanel) centerPanel.getComponent(1), (SpectrumPanel) centerPanel.getComponent(0))).start();
             }
         });
 
+        JButton stopButton = new JButton("Stop");
+        stopButton.setBackground(new Color(23, 21, 59));
+        stopButton.setForeground(Color.WHITE);
+        stopButton.addActionListener(e -> {
+            AudioProcessor.stopAudioPlayback(true);
+        });
+
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottomPanel.setBackground(new Color(23, 21, 59));
         bottomPanel.add(songDropdown);
         bottomPanel.add(playButton);
+        bottomPanel.add(stopButton);
 
-        panel.add(bottomPanel, BorderLayout.SOUTH);
-
-        // Set background color for components
-        panel.setBackground(purple);
-        slidersPanel.setBackground(purple);
-        bassPanel.setBackground(purple);
-        bassSlider.setBackground(purple);
-        midPanel.setBackground(purple);
-        midSlider.setBackground(purple);
-        treblePanel.setBackground(purple);
-        trebleSlider.setBackground(purple);
-        songDropdown.setBackground(purple);
-        playButton.setBackground(purple);
-
-        // Customize text and border colors
-        bassSlider.setForeground(Color.WHITE);
-        midSlider.setForeground(Color.WHITE);
-        trebleSlider.setForeground(Color.WHITE);
-        songDropdown.setForeground(Color.WHITE);
-        playButton.setForeground(Color.WHITE);
-
-        frame.add(panel);
-        frame.setVisible(true);
+        return bottomPanel;
     }
 
-    // Helper method to create a panel for each slider
+    private static void populateSongMap() {
+        songMap.put("Imperial March", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\ImperialMarch60.wav");
+        songMap.put("Star Wars", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\StarWars60.wav");
+        songMap.put("Baby Elephant Walk", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\BabyElephantWalk60.wav");
+        songMap.put("Pink Panther", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\PinkPanther60.wav");
+    }
+
     private static JPanel createSliderPanel(JLabel label, JSlider slider) {
         JPanel sliderPanel = new JPanel();
         sliderPanel.setLayout(new BoxLayout(sliderPanel, BoxLayout.Y_AXIS));
+        sliderPanel.setBackground(new Color(23, 21, 59));
+
         label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        label.setForeground(Color.WHITE);
         slider.setAlignmentX(Component.CENTER_ALIGNMENT);
         slider.setMajorTickSpacing(10);
         slider.setPaintTicks(true);
         slider.setPaintLabels(true);
+        slider.setBackground(new Color(23, 21, 59));
+        slider.setForeground(Color.WHITE);
+
         sliderPanel.add(label);
         sliderPanel.add(slider);
-        label.setForeground(Color.WHITE);
         return sliderPanel;
     }
 
-    // Get Values from sliders
     public float getBassSliderValue() {
         bassSlider.addChangeListener(e -> bassGain = bassSlider.getValue());
         return bassGain;
