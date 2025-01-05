@@ -51,32 +51,40 @@ public class EQGUI {
         titleLabel.setForeground(Color.WHITE);
         panel.add(titleLabel, BorderLayout.NORTH);
 
-        // Create visualizer panel
+        // Create visualizer panel (bars)
         VisualizerPanel visualizer = new VisualizerPanel(3);
-        visualizer.setPreferredSize(new Dimension(800, 200));
-        visualizer.setBackground(new Color(23, 21, 59));;
-        panel.add(visualizer, BorderLayout.CENTER);
+        visualizer.setPreferredSize(new Dimension(600, 100));
+        visualizer.setBackground(new Color(23, 21, 59));
 
         // Create spectrum panel
         SpectrumPanel spectrumPanel = new SpectrumPanel(1024); // Adjust number of bins as needed
-        spectrumPanel.setPreferredSize(new Dimension(800, 200));
-        panel.add(spectrumPanel, BorderLayout.NORTH);
+        spectrumPanel.setPreferredSize(new Dimension(600, 100));
+        spectrumPanel.setBackground(new Color(23, 21, 59));
 
+        // Center panel to hold spectrum and bars
+        JPanel centerPanel = new JPanel();
+        centerPanel.setLayout(new BorderLayout());
+        centerPanel.add(spectrumPanel, BorderLayout.NORTH);
+        centerPanel.add(visualizer, BorderLayout.CENTER);
+        
+        panel.add(centerPanel, BorderLayout.CENTER);
 
         // Controls panel with sliders side by side
-        JPanel controlsPanel = new JPanel();
-        controlsPanel.setLayout(new GridLayout(1, 3, 20, 0)); // 1 row, 3 columns, with spacing
+        JPanel slidersPanel = new JPanel();
+        slidersPanel.setLayout(new GridLayout(1, 3, 10, 10)); // 1 row, 3 columns, with spacing
 
-        // Create slider panels for better alignment
         JPanel bassPanel = createSliderPanel(bassLabel, bassSlider);
         JPanel midPanel = createSliderPanel(midLabel, midSlider);
         JPanel treblePanel = createSliderPanel(trebleLabel, trebleSlider);
 
-        controlsPanel.add(bassPanel);
-        controlsPanel.add(midPanel);
-        controlsPanel.add(treblePanel);
+        slidersPanel.add(bassPanel);
+        slidersPanel.add(midPanel);
+        slidersPanel.add(treblePanel);
 
-        panel.add(controlsPanel, BorderLayout.WEST);
+        panel.add(slidersPanel, BorderLayout.WEST);
+
+
+        panel.add(slidersPanel, BorderLayout.WEST);
 
         // Create the song dropdown menu
         songDropdown = new JComboBox<>(songMap.keySet().toArray(new String[0]));
@@ -99,13 +107,13 @@ public class EQGUI {
 
         // Set background color for components
         panel.setBackground(purple);
+        slidersPanel.setBackground(purple);
         bassPanel.setBackground(purple);
         bassSlider.setBackground(purple);
         midPanel.setBackground(purple);
         midSlider.setBackground(purple);
         treblePanel.setBackground(purple);
         trebleSlider.setBackground(purple);
-        controlsPanel.setBackground(purple);
         songDropdown.setBackground(purple);
         playButton.setBackground(purple);
 
