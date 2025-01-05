@@ -11,14 +11,13 @@ public class AudioProcessor {
 
     static EQGUI eq = new EQGUI();
 
-    public static void playAudioWithEQ(float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer) {
-        JFileChooser fileChooser = new JFileChooser();
-        int result = fileChooser.showOpenDialog(null);
-        if (result != JFileChooser.APPROVE_OPTION) {
+    public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer) {
+        File audioFile = new File(filePath);
+        if (!audioFile.exists()) {
+            System.out.println("Error: File not found at " + filePath);
             return;
         }
     
-        File audioFile = fileChooser.getSelectedFile();
         float[] gains = new float[] {initialBassGain, initialMidGain, initialTrebleGain};
 
         new Thread(() -> {
