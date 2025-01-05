@@ -95,20 +95,16 @@ public class EQGUI {
         return slidersPanel;
     }
 
+    
     private static JPanel setupBottomPanel(JPanel centerPanel) {
-        populateSongMap();
-
-        songDropdown = new JComboBox<>(songMap.keySet().toArray(new String[0]));
-        songDropdown.setBackground(new Color(23, 21, 59));
-        songDropdown.setForeground(Color.WHITE);
+        SongMenu songMenu = new SongMenu();
 
         JButton playButton = new JButton("Play");
         playButton.setBackground(new Color(23, 21, 59));
         playButton.setForeground(Color.WHITE);
         playButton.addActionListener(e -> {
-            String selectedSong = (String) songDropdown.getSelectedItem();
-            if (selectedSong != null) {
-                String filePath = songMap.get(selectedSong);
+            String filePath = songMenu.getSelectedSongPath();
+            if (filePath != null) {
                 new Thread(() -> AudioProcessor.playAudioWithEQ(filePath, bassGain, midGain, trebleGain, (VisualizerPanel) centerPanel.getComponent(1), (SpectrumPanel) centerPanel.getComponent(0))).start();
             }
         });
@@ -122,18 +118,11 @@ public class EQGUI {
 
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         bottomPanel.setBackground(new Color(23, 21, 59));
-        bottomPanel.add(songDropdown);
+        bottomPanel.add(songMenu.getDropdown());
         bottomPanel.add(playButton);
         bottomPanel.add(stopButton);
 
         return bottomPanel;
-    }
-
-    private static void populateSongMap() {
-        songMap.put("Imperial March", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\ImperialMarch60.wav");
-        songMap.put("Star Wars", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\StarWars60.wav");
-        songMap.put("Baby Elephant Walk", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\BabyElephantWalk60.wav");
-        songMap.put("Pink Panther", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\PinkPanther60.wav");
     }
 
     private static JPanel createSliderPanel(JLabel label, JSlider slider) {

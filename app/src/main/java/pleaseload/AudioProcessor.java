@@ -102,8 +102,7 @@ public class AudioProcessor {
         }
     
         return heights;
-    }
-    
+    } 
     
     private static double[] byteToDouble(byte[] buffer, AudioFormat format){
         int sampleSizeInBytes = format.getSampleSizeInBits() / 8;
@@ -155,7 +154,6 @@ public class AudioProcessor {
 
         return outputBuffer;
     }
-
 
     private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
         float sampleRate = format.getSampleRate();
