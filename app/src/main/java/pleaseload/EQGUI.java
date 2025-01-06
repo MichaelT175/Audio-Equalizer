@@ -48,7 +48,7 @@ public class EQGUI {
     private static JFrame setupMainFrame() {
         JFrame frame = new JFrame("Audio Equalizer + Visualizer");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(800, 500);
+        frame.setSize(900, 500);
         return frame;
     }
 
@@ -70,7 +70,7 @@ public class EQGUI {
         visualizer.setBackground(new Color(23, 21, 59));
 
         SpectrumPanel spectrumPanel = new SpectrumPanel(1024);
-        spectrumPanel.setPreferredSize(new Dimension(600, 100));
+        spectrumPanel.setPreferredSize(new Dimension(600, 150));
         spectrumPanel.setBackground(new Color(23, 21, 59));
 
         JPanel centerPanel = new JPanel(new BorderLayout());
@@ -116,11 +116,19 @@ public class EQGUI {
             AudioProcessor.stopAudioPlayback(true);
         });
 
+        JButton newSongButton = new JButton("Add Song");
+        newSongButton.setBackground(new Color(23, 21, 59));
+        newSongButton.setForeground(Color.WHITE);
+        newSongButton.addActionListener(e -> {
+            songMenu.addNewFile();
+        });
+
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         bottomPanel.setBackground(new Color(23, 21, 59));
         bottomPanel.add(songMenu.getDropdown());
         bottomPanel.add(playButton);
         bottomPanel.add(stopButton);
+        bottomPanel.add(newSongButton);
 
         return bottomPanel;
     }

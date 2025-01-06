@@ -26,16 +26,33 @@ public class SongMenu {
     // Sorts the songs in alphabetical order by their titles
     private void sortSongs() {
         List<String> songTitles = new ArrayList<>(songMap.keySet());
-        Collections.sort(songTitles); // Sort titles alphabetically
-
+    
+        // Selection sort
+        for (int i = 0; i < songTitles.size() - 1; i++) {
+            int minIndex = i;
+            for (int j = i + 1; j < songTitles.size(); j++) {
+                if (songTitles.get(j).compareTo(songTitles.get(minIndex)) < 0) {
+                    minIndex = j;
+                }
+            }
+            // Swap the elements
+            if (minIndex != i) {
+                String temp = songTitles.get(i);
+                songTitles.set(i, songTitles.get(minIndex));
+                songTitles.set(minIndex, temp);
+            }
+        }
+    
         // Create a new map preserving the sorted order
         Map<String, String> sortedMap = new LinkedHashMap<>();
         for (String title : songTitles) {
             sortedMap.put(title, songMap.get(title));
         }
+    
         songMap.clear();
         songMap.putAll(sortedMap);
     }
+    
 
     // Creates the dropdown menu for songs
     private void createDropdown() {
@@ -52,4 +69,47 @@ public class SongMenu {
         String selectedSong = (String) songDropdown.getSelectedItem();
         return selectedSong != null ? songMap.get(selectedSong) : null;
     }
+
+    // Allows the user to select a new song file, name it, and add it to the dropdown menu
+    public String addNewFile() {
+        // Open a file chooser dialog to select the song file
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Select a Song File");
+        int result = fileChooser.showOpenDialog(null);
+
+        if (result == JFileChooser.APPROVE_OPTION) {
+            // Get the selected file's path
+            String filePath = fileChooser.getSelectedFile().getAbsolutePath();
+
+            // Ask the user for a name for the song
+            String songName = JOptionPane.showInputDialog(null, 
+                "Enter a name for the song:", 
+                "Name Your Song", 
+                JOptionPane.PLAIN_MESSAGE);
+
+            // Validate the input
+            if (songName != null && !songName.trim().isEmpty()) {
+                songName = songName.trim();
+
+                // Add the new song to the map
+                songMap.put(songName, filePath);
+
+                // Re-sort the songs to maintain alphabetical order
+                sortSongs();
+
+                // Update the dropdown menu
+                songDropdown.removeAllItems();
+                for (String title : songMap.keySet()) {
+                    songDropdown.addItem(title);
+                }
+
+                return "Song added successfully!";
+            } else {
+                return "Song addition canceled or invalid name.";
+            }
+        }
+
+        return "No file selected.";
+    }
+    
 }

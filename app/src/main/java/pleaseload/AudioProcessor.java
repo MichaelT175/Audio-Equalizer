@@ -78,7 +78,11 @@ public class AudioProcessor {
         FastFourier fft = new FastFourier(newBuffer);
         fft.transform();
         double[] perFreqMagnitude = fft.getMagnitude(true);
-        return perFreqMagnitude;
+        double[] arr = new double[perFreqMagnitude.length/2];
+        for(int i = 0; i < arr.length; i++){
+            arr[i] = perFreqMagnitude[i];
+        }
+        return arr;
     }
     
     private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format, SpectrumPanel spectrumPanel) {
