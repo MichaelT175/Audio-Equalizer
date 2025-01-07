@@ -76,40 +76,79 @@ public class SongMenu {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select a Song File");
         int result = fileChooser.showOpenDialog(null);
-
+    
         if (result == JFileChooser.APPROVE_OPTION) {
             // Get the selected file's path
             String filePath = fileChooser.getSelectedFile().getAbsolutePath();
-
-            // Ask the user for a name for the song
-            String songName = JOptionPane.showInputDialog(null, 
-                "Enter a name for the song:", 
-                "Name Your Song", 
-                JOptionPane.PLAIN_MESSAGE);
-
-            // Validate the input
-            if (songName != null && !songName.trim().isEmpty()) {
-                songName = songName.trim();
-
-                // Add the new song to the map
-                songMap.put(songName, filePath);
-
-                // Re-sort the songs to maintain alphabetical order
-                sortSongs();
-
-                // Update the dropdown menu
-                songDropdown.removeAllItems();
-                for (String title : songMap.keySet()) {
-                    songDropdown.addItem(title);
+    
+            while (true) {
+                // Ask the user for a name for the song
+                String songName = JOptionPane.showInputDialog(null, 
+                    "Enter a name for the song (No more than 5 words, no numbers/special characters, starts with a capital letter):", 
+                    "Name Your Song", 
+                    JOptionPane.PLAIN_MESSAGE);
+    
+                // Check if the input is valid
+                if (songName == null) {
+                    return "Song addition canceled.";
                 }
-
-                return "Song added successfully!";
-            } else {
-                return "Song addition canceled or invalid name.";
+    
+                songName = songName.trim();
+    
+                // Validation for the song name
+                if (isValidSongName(songName)) {
+                    // Add the new song to the map
+                    songMap.put(songName, filePath);
+    
+                    // Re-sort the songs to maintain alphabetical order
+                    sortSongs();
+    
+                    // Update the dropdown menu
+                    songDropdown.removeAllItems();
+                    for (String title : songMap.keySet()) {
+                        songDropdown.addItem(title);
+                    }
+    
+                    return "Song added successfully!";
+                } else {
+                    JOptionPane.showMessageDialog(null, 
+                        "Invalid song name. A valid name should:\n" +
+                        "- Be no more than 5 words\n" +
+                        "- Contain no numbers or special characters\n" +
+                        "- Start with a capital letter", 
+                        "Invalid Name", 
+                        JOptionPane.ERROR_MESSAGE);
+                }
             }
         }
-
+    
         return "No file selected.";
     }
+    
+    // Helper method to validate song names
+    private boolean isValidSongName(String songName) {
+        if (songName.isEmpty()) {
+            return false;
+        }
+    
+        // Check for word count (no more than 5 words)
+        String[] words = songName.split("\\s+");
+        if (words.length > 5) {
+            return false;
+        }
+    
+        // Check for valid characters (letters and spaces only)
+        if (!songName.matches("[A-Za-z ]+")) {
+            return false;
+        }
+    
+        // Check if the first letter of the song name is capitalized
+        if (!Character.isUpperCase(songName.charAt(0))) {
+            return false;
+        }
+    
+        return true;
+    }
+    
     
 }

@@ -95,9 +95,16 @@ public class EQGUI {
         return slidersPanel;
     }
 
-    
+    private static PresetManager presetManager = new PresetManager();
+    private static Map<String, float[]> loadedPresets;
+
     private static JPanel setupBottomPanel(JPanel centerPanel) {
         SongMenu songMenu = new SongMenu();
+
+        // Initialize songDropdown with songs from SongMenu
+        songDropdown = songMenu.getDropdown();
+        songDropdown.setBackground(new Color(23, 21, 59));
+        songDropdown.setForeground(Color.WHITE);
 
         JButton playButton = new JButton("Play");
         playButton.setBackground(new Color(23, 21, 59));
@@ -123,13 +130,49 @@ public class EQGUI {
             songMenu.addNewFile();
         });
 
+        JButton savePresetButton = new JButton("Save Preset");
+        savePresetButton.setBackground(new Color(23, 21, 59));
+        savePresetButton.setForeground(Color.WHITE);
+        savePresetButton.addActionListener(e -> {
+            String selectedSong = (String) songDropdown.getSelectedItem();
+            if (selectedSong != null) {
+                presetManager.savePreset(selectedSong, bassSlider.getValue(), midSlider.getValue(), trebleSlider.getValue());
+            } else {
+                System.err.println("No song selected for saving a preset.");
+            }
+        });
+    
+        JButton loadPresetButton = new JButton("Load Preset");
+        loadPresetButton.setBackground(new Color(23, 21, 59));
+        loadPresetButton.setForeground(Color.WHITE);
+        loadPresetButton.addActionListener(e -> {
+            String selectedSong = (String) songDropdown.getSelectedItem();
+            if (selectedSong != null && loadedPresets.containsKey(selectedSong)) {
+                float[] preset = loadedPresets.get(selectedSong);
+                bassSlider.setValue((int) preset[0]);
+                midSlider.setValue((int) preset[1]);
+                trebleSlider.setValue((int) preset[2]);
+                System.out.println("Preset loaded for song: " + selectedSong);
+            } else {
+                System.err.println("No preset found for the selected song.");
+            }
+        });
+    
+        // Load presets when the app starts
+        loadedPresets = presetManager.loadPresets();
+    
+        // Bottom panel layout
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         bottomPanel.setBackground(new Color(23, 21, 59));
-        bottomPanel.add(songMenu.getDropdown());
+        bottomPanel.add(savePresetButton);
+        bottomPanel.add(loadPresetButton);
+        bottomPanel.add(newSongButton);
+        bottomPanel.add(songDropdown);
         bottomPanel.add(playButton);
         bottomPanel.add(stopButton);
-        bottomPanel.add(newSongButton);
 
+
+    
         return bottomPanel;
     }
 
