@@ -4,49 +4,59 @@ import java.io.*;
 import java.util.*;
 
 public class PresetManager {
-    private static final String PRESET_FILE = "presets.txt";
+    private static final String PRESETS_FILE = "presets.txt";
+    private final Map<String, Map<String, float[]>> presets = new HashMap<>(); // song -> (presetName -> values)
 
-    // Saves a preset for a specific song
-    public void savePreset(String songTitle, float bass, float mid, float treble) {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(PRESET_FILE, true))) {
-            writer.write(songTitle + "," + bass + "," + mid + "," + treble);
-            writer.newLine();
-            System.out.println("Preset saved for song: " + songTitle);
-        } catch (IOException e) {
-            System.err.println("Error saving preset: " + e.getMessage());
+    // Load presets from the file
+    public Map<String, Map<String, float[]>> loadPresets() {
+        File file = new File(PRESETS_FILE);
+        if (!file.exists()) {
+            System.out.println("No presets file found. It will be created when saving.");
+            return presets;
         }
-    }
 
-    // Loads presets from the file
-    public Map<String, float[]> loadPresets() {
-        Map<String, float[]> presets = new HashMap<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(PRESET_FILE))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length == 4) {
-                    String songTitle = parts[0];
-                    float bass = Float.parseFloat(parts[1]);
-                    float mid = Float.parseFloat(parts[2]);
-                    float treble = Float.parseFloat(parts[3]);
-                    presets.put(songTitle, new float[]{bass, mid, treble});
+                String[] parts = line.split(";");
+                if (parts.length == 5) {
+                    String song = parts[0];
+                    String presetName = parts[1];
+                    float bass = Float.parseFloat(parts[2]);
+                    float mid = Float.parseFloat(parts[3]);
+                    float treble = Float.parseFloat(parts[4]);
+
+                    presets.putIfAbsent(song, new HashMap<>());
+                    presets.get(song).put(presetName, new float[]{bass, mid, treble});
                 }
             }
-        } catch (FileNotFoundException e) {
-            System.out.println("No presets file found. It will be created when saving.");
-        } catch (IOException e) {
+        } catch (IOException | NumberFormatException e) {
             System.err.println("Error loading presets: " + e.getMessage());
         }
+
         return presets;
     }
 
-    // Deletes all presets for cleanup purposes (optional)
-    public void clearPresets() {
-        try {
-            new PrintWriter(PRESET_FILE).close();
-            System.out.println("All presets cleared.");
+    // Save a preset
+    public void savePreset(String song, String presetName, float bass, float mid, float treble) {
+        presets.putIfAbsent(song, new HashMap<>());
+        presets.get(song).put(presetName, new float[]{bass, mid, treble});
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(PRESETS_FILE))) {
+            for (String s : presets.keySet()) {
+                for (Map.Entry<String, float[]> entry : presets.get(s).entrySet()) {
+                    String name = entry.getKey();
+                    float[] values = entry.getValue();
+                    writer.write(String.format("%s;%s;%.2f;%.2f;%.2f%n", s, name, values[0], values[1], values[2]));
+                }
+            }
         } catch (IOException e) {
-            System.err.println("Error clearing presets: " + e.getMessage());
+            System.err.println("Error saving presets: " + e.getMessage());
         }
+    }
+
+    // Get all presets for a specific song
+    public Map<String, float[]> getPresetsForSong(String song) {
+        return presets.getOrDefault(song, Collections.emptyMap());
     }
 }

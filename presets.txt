@@ -1,4 +1,5 @@
-Baby Elephant Walk,0.0,9.0,0.0
-Baby Elephant Walk,0.0,-14.0,-18.0
-Imperial March,0.0,15.0,-16.0
-Imperial March,0.0,-20.0,-16.0
+Star Wars;test;0.00;0.00;19.00
+Star Wars;Tester two;0.00;19.00;17.00
+Star Wars;Tester Preset;0.00;19.00;-18.00
+Imperial March;Imp March test;20.00;19.00;17.00
+Pink Panther;ed;0.00;0.00;19.00
