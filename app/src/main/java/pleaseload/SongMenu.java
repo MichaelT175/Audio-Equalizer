@@ -23,9 +23,9 @@ public class SongMenu {
         songMap.put("Pink Panther", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\PinkPanther60.wav");
     }
 
-    // Sorts the songs in alphabetical order by their titles
+    //Sorts songs in alphabetical order by their titles using slection sort
     private void sortSongs() {
-        List<String> songTitles = new ArrayList<>(songMap.keySet());
+        List<String>songTitles = new ArrayList<>(songMap.keySet());
     
         // Selection sort
         for (int i = 0; i < songTitles.size() - 1; i++) {

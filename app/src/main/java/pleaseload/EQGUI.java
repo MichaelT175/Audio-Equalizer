@@ -6,13 +6,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class EQGUI {
-    private static float bassGain = 0.0f; // Bass adjustment in decibels
-    private static float midGain = 0.0f; // Mid adjustment in decibels
-    private static float trebleGain = 0.0f; // Treble adjustment in decibels
+    // Bass, mid, treble adjustment in decibels
+    private static float bassGain = 0.0f; 
+    private static float midGain = 0.0f;
+    private static float trebleGain = 0.0f;
 
+    //Slider max/min values
     static int max = 20;
     static int min = -20;
 
+    //Creating sliders and their respective labels
     static JLabel bassLabel = new JLabel("Bass:");
     static JSlider bassSlider = new JSlider(JSlider.VERTICAL, min, max, 0);
 
