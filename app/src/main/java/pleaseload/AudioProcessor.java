@@ -2,21 +2,49 @@ package pleaseload;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
+
+import com.github.psambit9791.jdsp.filter.Butterworth;
+import com.github.psambit9791.jdsp.transform.FastFourier;
+
 import java.io.*; 
+/*
+ * Notes:
+ * - Sample is "height" of wave at some timestamp. It is an integer. 
+ *   The sample size in bits is how many bits that integer is. 
+ */
 
 public class AudioProcessor {
 
-    //Method which plays the audio with the applied EQ
-    public static void playAudioWithEQ() {
+    static EQGUI eq = new EQGUI();
+    private static boolean stopPlayback = false;
+    private static final Object pauseLock = new Object();
 
-        //Allows usr to choose file from the pc
-        JFileChooser fileChooser = new JFileChooser();
-        int result = fileChooser.showOpenDialog(null);
-        if (result != JFileChooser.APPROVE_OPTION) {
+    public static void stopAudioPlayback(boolean stop) {
+        stopPlayback = stop;
+    }
+
+    private static boolean isPaused = false;
+
+    public static void pauseAudioPlayback() {
+        isPaused = true;
+    }
+
+    public static void unpauseAudioPlayback() {
+        synchronized (pauseLock) {
+            isPaused = false;
+            pauseLock.notifyAll(); // Resume playback
+        }
+    }
+
+    //Method which plays the audio with the applied EQ
+    public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, float initialTrebleGain, VisualizerPanel visualizer, SpectrumPanel sPanel) {
+        File audioFile = new File(filePath);
+        if (!audioFile.exists()) {
+            System.out.println("Error: File not found at " + filePath);
             return;
         }
-
-        File audioFile = fileChooser.getSelectedFile();
+        
+        float[] gains = new float[] {initialBassGain, initialMidGain, initialTrebleGain};
 
         // tries to open the audio file and gets its format
         try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile)) { //"Opens" file
@@ -34,11 +62,42 @@ public class AudioProcessor {
             line.start();
             
             byte[] buffer = new byte[4096];
-            
-            //reads small pieces of the audio file and for each piece applies changes, then plays it
             int bytesRead;
+            int numBars = 10;
+
+            //reads small pieces of the audio file and for each piece applies changes, then plays it
             while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
-                byte[] adjustedBuffer = applyEQ(buffer, format); 
+
+                    // Check for stop request
+                    if (stopPlayback) {
+                        line.stop();
+                        line.close();
+                        break;
+                    }
+
+                    // Pause handling
+                    synchronized (pauseLock) {
+                        while (isPaused) {
+                            try {
+                                pauseLock.wait();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                
+                gains[0] = eq.getBassSliderValue();
+                gains[1] = eq.getMidSliderValue();
+                gains[2] = eq.getTrebleSliderValue();
+
+                // Apply EQ to the current buffer
+                byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
+                int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format);
+
+                SwingUtilities.invokeLater(() -> visualizer.updateVisualizer(barHeights));
+                SwingUtilities.invokeLater(() -> sPanel.updateSpectrum(notSorted(buffer, numBars, format)));
+                //SwingUtilities.invokeLater(() -> sPanel.updateSpectrum(byteToDouble(buffer, format)));
                 line.write(adjustedBuffer, 0, bytesRead);
             }
 
@@ -50,24 +109,62 @@ public class AudioProcessor {
             e.printStackTrace();
         }
     }
-  
+
+    private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format) {
+
+        double[] newBuffer = byteToDouble(buffer, format);
+
+        FastFourier fft = new FastFourier(newBuffer);
+
+        fft.transform();
+        double[] perFreqMagnitude = fft.getMagnitude(true);
+        int numBinsPerBar = perFreqMagnitude.length/numBars;
+
+        int[] heights = new int[numBars];
+
+        for (int i = 0; i < heights.length; i++) {
+            double barWeight = 0;
+            int start = i * numBinsPerBar + 1;
+            int end = (i+1) * numBinsPerBar;
+            for(int j = start; j < end; j++){
+                barWeight += perFreqMagnitude[j];
+            }
+            heights[i] = (int)(barWeight);
+        }
+
+        return heights;
+    }    
+    
+    private static double[] notSorted(byte[] buffer, int numBars, AudioFormat format){
+        double[] newBuffer = byteToDouble(buffer, format);
+    
+        FastFourier fft = new FastFourier(newBuffer);
+        fft.transform();
+        double[] perFreqMagnitude = fft.getMagnitude(true);
+        double[] arr = new double[perFreqMagnitude.length/2];
+        for(int i = 0; i < arr.length; i++){
+            arr[i] = perFreqMagnitude[i];
+        }
+        return arr;
+    }
+
     // Method to convert buffer from byte to double array, because methods in applyEQ expect double
     private static double[] byteToDouble(byte[] buffer, AudioFormat format) {
-        int sampleSizeInBytes = format.getSampleSizeInBits() / 8; // Calculate sample size in bytes
-        boolean isBigEndian = format.isBigEndian(); // Check if the format is big-endian
+        int sampleSizeInBytes = format.getSampleSizeInBits() / 8; // Calculate sample size in bytes. 
+        boolean isBigEndian = format.isBigEndian();
 
         double[] audioData = new double[buffer.length / sampleSizeInBytes]; // Initialize double array for audio data
         for (int i = 0; i < audioData.length; i++) {
             int sampleIndex = i * sampleSizeInBytes; // Calculate sample index in the buffer
-            int sample = 0; // Initialize sample variable
+            int sample = 0;
 
-            if (sampleSizeInBytes == 2) { // If sample size is 2 bytes
+            if (sampleSizeInBytes == 2) { //16 bit
                 if (isBigEndian) {
                     sample = (buffer[sampleIndex] << 8) | (buffer[sampleIndex + 1] & 0xFF); // Convert big-endian bytes to sample
                 } else {
                     sample = (buffer[sampleIndex + 1] << 8) | (buffer[sampleIndex] & 0xFF); // Convert little-endian bytes to sample
                 }
-            } else if (sampleSizeInBytes == 1) { // If sample size is 1 byte
+            } else if (sampleSizeInBytes == 1) { //8 bit
                 sample = buffer[sampleIndex]; // Assign byte value to sample
             }
 
@@ -103,12 +200,45 @@ public class AudioProcessor {
         return outputBuffer; // Return the byte array of output buffer
     }
 
+    private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
+        float sampleRate = format.getSampleRate();
+        
+        // Convert byte buffer to double array
+        double[] audioData = byteToDouble(buffer, format);
+        
+        // Apply Butterworth filters
+        Butterworth butterworth = new Butterworth(sampleRate);
 
+        // Bass: Low-pass filter (Isolates bass frequencys)
+        double[] bassFiltered = butterworth.lowPassFilter(audioData, 2, 200.0);
+        for (int i = 0; i < bassFiltered.length; i++) {
+            bassFiltered[i] *= Math.pow(10, bassGain / 20);
+        }
 
-    private static byte[] applyEQ(byte[] buffer, AudioFormat format) {
+        // Mid: Band-pass filter
+        double[] midFiltered = butterworth.bandPassFilter(audioData, 2, 200.0, 2000.0);
+        for (int i = 0; i < midFiltered.length; i++) {
+            // Adjust mid-range volume using the mid gain (converted from dB to a linear scale)
+            midFiltered[i] *= Math.pow(10, midGain / 20);
+        }
 
-        return buffer;
+        // Treble:High-pass filter
+        double[] trebleFiltered = butterworth.highPassFilter(audioData, 2, 2000.0);
+        for (int i = 0; i < trebleFiltered.length; i++) {
+            trebleFiltered[i] *= Math.pow(10, trebleGain / 20);
+        }
+
+        // Combine filtered signals
+        double[] combined = new double[audioData.length];
+        for (int i = 0; i < combined.length; i++) {
+            combined[i] = bassFiltered[i] + midFiltered[i] + trebleFiltered[i];
+            // clamp signal within the valid range
+            combined[i] = Math.max(-1.0, Math.min(1.0, combined[i]));
+        }
+
+        // Convert double array back to byte buffer
+        byte[] outputBuffer = doubleToByte(combined, format);
+
+        return outputBuffer;
     }
 }
-
-
