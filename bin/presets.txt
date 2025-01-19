@@ -1,0 +1,5 @@
+Star Wars;Cool Preset;0.00;10.00;-10.00
+Imperial March;Preset 2;-11.00;19.00;-10.00
+Imperial March;Preset3;-11.00;19.00;-10.00
+Imperial March;Preset4;-11.00;-20.00;-10.00
+Imperial March;Name;0.00;0.00;-15.00

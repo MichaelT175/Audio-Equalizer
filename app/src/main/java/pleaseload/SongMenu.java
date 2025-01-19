@@ -21,6 +21,7 @@ public class SongMenu {
         songMap.put("Star Wars", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\StarWars60.wav");
         songMap.put("Baby Elephant Walk", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\BabyElephantWalk60.wav");
         songMap.put("Pink Panther", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\PinkPanther60.wav");
+        songMap.put("Sin Sweep", "C:\\Users\\Michael Jr\\Music\\DEMO SONGS\\OnlineSound_net_Sweep_Tone.wav");
     }
 
     //Sorts songs in alphabetical order by their titles using slection sort
