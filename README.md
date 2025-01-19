@@ -46,7 +46,7 @@ Welcome to the Audio Equalizer + Visualizer project! This Java based application
 
 - Clone this repository to your local machine:
 
-- git clone https://github.com/your-username/audio-equalizer.git
+- git clone https://github.com/MichaelT175/Audio-Equalizer.git
 
 - Open the project in your preferred Java IDE.
 
@@ -87,12 +87,6 @@ Contributions are welcome! If you'd like to contribute to this project, please f
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Acknowledgments
-
-Inspired by various audio equalizer and visualizer tools.
-
-Special thanks to contributors and testers for feedback and improvements.
 
 ## Contact
 
