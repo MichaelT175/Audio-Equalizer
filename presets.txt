@@ -1,0 +1,4 @@
+Star Wars;Test;10.00;-10.00;10.00
+Imperial March;Preset 1;0.00;-10.00;10.00
+Pink Panther;Preset 1;0.00;-10.00;18.00
+Baby Elephant Walk;Michaels Preset;-15.00;-10.00;11.00
