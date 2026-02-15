@@ -1,0 +1,7 @@
+com\audioeq\EqualizerApp.class
+com\audioeq\PresetManager.class
+com\audioeq\AudioProcessor.class
+com\audioeq\DBMeterCanvasFX.class
+com\audioeq\SongMenuFX.class
+com\audioeq\SpectrumCanvasFX.class
+com\audioeq\VisualizerCanvasFX.class
