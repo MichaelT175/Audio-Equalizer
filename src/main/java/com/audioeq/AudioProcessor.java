@@ -1,11 +1,21 @@
 package com.audioeq;
 
 
-import javax.sound.sampled.*;
-import javafx.application.Platform;
+import java.io.File;
+import java.io.IOException;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.UnsupportedAudioFileException;
+
 import com.github.psambit9791.jdsp.filter.Butterworth;
 import com.github.psambit9791.jdsp.transform.FastFourier;
-import java.io.*; 
+ 
+import javafx.application.Platform;
 
 /**
  * The AudioProcessor class handles audio playback with equalization (EQ) effects.
@@ -99,7 +109,7 @@ public class AudioProcessor {
      */
     public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, 
                                       float initialTrebleGain, VisualizerCanvasFX visualizer, 
-                                      SpectrumCanvasFX spectrumCanvas) {
+                                      SpectrumCanvasFX spectrumCanvas, WaveformCanvasFX waveformCanvas, EqualizerApp eq) {
         File audioFile = new File(filePath);
 
         if (!audioFile.exists()) {
@@ -153,8 +163,12 @@ public class AudioProcessor {
                         }
                     }
                 }
-                
-                // Apply EQ
+
+                gains[0] = eq.getBassSliderValue();
+                gains[1] = eq.getMidSliderValue();
+                gains[2] = eq.getTrebleSliderValue();
+
+                // Apply EQ to the current buffer
                 byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
                 
                 // Apply volume and auto-leveling
@@ -167,6 +181,8 @@ public class AudioProcessor {
                 
                 // Calculate dB
                 currentdB = calculatedB(adjustedBuffer, format);
+
+                final byte[] finalBuffer = adjustedBuffer;
                 
                 // Update visualizers on JavaFX thread
                 int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format);
@@ -175,6 +191,12 @@ public class AudioProcessor {
                 Platform.runLater(() -> {
                     visualizer.updateVisualizer(barHeights);
                     spectrumCanvas.updateSpectrum(spectrumData);
+                });
+
+                Platform.runLater(() -> {
+                    visualizer.updateVisualizer(barHeights);
+                    spectrumCanvas.updateSpectrum(spectrumData);
+                    waveformCanvas.updateWaveform(finalBuffer, format.getSampleSizeInBits() / 8); // ADD THIS LINE
                 });
                 
                 line.write(adjustedBuffer, 0, bytesRead);
@@ -222,7 +244,7 @@ public class AudioProcessor {
             
             System.out.println(gain);
 
-            return Math.min(gain, 10.0f);
+            return Math.min(gain, 20.0f);
             
             
         } catch (Exception e) {
@@ -388,8 +410,7 @@ public class AudioProcessor {
     /**
      * Applies EQ filters.
      */
-    private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, 
-                                 float midGain, float trebleGain) {
+    private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
         float sampleRate = format.getSampleRate();
         double[] audioData = byteToDouble(buffer, format);
         
@@ -419,3 +440,4 @@ public class AudioProcessor {
         return doubleToByte(combined, format);
     }
 }
+
