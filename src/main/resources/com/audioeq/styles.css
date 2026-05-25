@@ -122,6 +122,22 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 217, 255, 0.4), 5, 0, 0, 0);
 }
 
+/* List Views */
+.list-view {
+    -fx-background-color: transparent;
+    -fx-control-inner-background: #0f1c2e;
+}
+
+.list-view .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e0e0e0;
+    -fx-padding: 6 8;
+}
+
+.list-view .list-cell:filled:selected {
+    -fx-background-color: rgba(0, 217, 255, 0.2);
+}
+
 /* Scroll bars */
 .scroll-bar {
     -fx-background-color: transparent;

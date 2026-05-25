@@ -20,12 +20,17 @@ public class WaveformCanvasFX extends Canvas {
     private double[] smoothedSamples;
     private final int SAMPLE_BUFFER_SIZE = 4000;
     private final double SMOOTHING_FACTOR = 0.3;
+    private String accentColor = "#00d9ff";
     
     public WaveformCanvasFX() {
         this.audioSamples = new double[SAMPLE_BUFFER_SIZE];
         this.smoothedSamples = new double[SAMPLE_BUFFER_SIZE];
         Arrays.fill(audioSamples, 0.0);
         Arrays.fill(smoothedSamples, 0.0);
+    }
+
+    public void setAccentColor(String color) {
+        this.accentColor = color;
     }
     
     /**
@@ -71,6 +76,47 @@ public class WaveformCanvasFX extends Canvas {
         
         draw();
     }
+
+    public void updateWaveformFromMagnitudes(double[] magnitudes) {
+        if (magnitudes == null || magnitudes.length == 0) {
+            return;
+        }
+
+        int chunk = Math.min(magnitudes.length, 240);
+        double[] newSamples = new double[chunk];
+
+        for (int i = 0; i < chunk; i++) {
+            double norm = (magnitudes[i] + 60.0) / 60.0;
+            norm = Math.max(0.0, Math.min(1.0, norm));
+            newSamples[i] = Math.sin(i * 0.35) * norm;
+        }
+
+        int shift = newSamples.length;
+        System.arraycopy(audioSamples, shift, audioSamples, 0, SAMPLE_BUFFER_SIZE - shift);
+
+        for (int i = 0; i < newSamples.length; i++) {
+            int targetIndex = SAMPLE_BUFFER_SIZE - newSamples.length + i;
+            if (targetIndex >= 0 && targetIndex < SAMPLE_BUFFER_SIZE) {
+                smoothedSamples[targetIndex] = smoothedSamples[targetIndex] * (1 - SMOOTHING_FACTOR) +
+                                               newSamples[i] * SMOOTHING_FACTOR;
+                audioSamples[targetIndex] = smoothedSamples[targetIndex];
+            }
+        }
+
+        draw();
+    }
+
+    public void updateWaveformFromMagnitudes(float[] magnitudes) {
+        if (magnitudes == null || magnitudes.length == 0) {
+            return;
+        }
+
+        double[] asDouble = new double[magnitudes.length];
+        for (int i = 0; i < magnitudes.length; i++) {
+            asDouble[i] = magnitudes[i];
+        }
+        updateWaveformFromMagnitudes(asDouble);
+    }
     
     /**
      * Draws the waveform visualization
@@ -107,9 +153,9 @@ public class WaveformCanvasFX extends Canvas {
         LinearGradient fillGradient = new LinearGradient(
             0, 0, 0, height,
             false, CycleMethod.NO_CYCLE,
-            new Stop(0, Color.web("#00d9ff", 0.3)),
-            new Stop(0.5, Color.web("#0099ff", 0.5)),
-            new Stop(1, Color.web("#00d9ff", 0.3))
+            new Stop(0, Color.web(accentColor, 0.3)),
+            new Stop(0.5, Color.web(accentColor, 0.55)),
+            new Stop(1, Color.web(accentColor, 0.3))
         );
         gc.setFill(fillGradient);
         
@@ -144,7 +190,7 @@ public class WaveformCanvasFX extends Canvas {
         
         // Draw main waveform line with glow
         gc.setEffect(new GaussianBlur(6));
-        gc.setStroke(Color.web("#00d9ff", 0.8));
+        gc.setStroke(Color.web(accentColor, 0.8));
         gc.setLineWidth(2.5);
         gc.beginPath();
         
@@ -166,7 +212,7 @@ public class WaveformCanvasFX extends Canvas {
         
         // Draw sharp line on top
         gc.setEffect(null);
-        gc.setStroke(Color.web("#00ffff"));
+        gc.setStroke(Color.web(accentColor).brighter());
         gc.setLineWidth(1.5);
         gc.beginPath();
         
@@ -188,7 +234,7 @@ public class WaveformCanvasFX extends Canvas {
         
         // Draw mirrored waveform below center line
         gc.setEffect(new GaussianBlur(6));
-        gc.setStroke(Color.web("#00d9ff", 0.4));
+        gc.setStroke(Color.web(accentColor, 0.4));
         gc.setLineWidth(2.5);
         gc.beginPath();
         
@@ -240,12 +286,12 @@ public class WaveformCanvasFX extends Canvas {
         double centerY = height / 2;
         
         // Draw center line
-        gc.setStroke(Color.web("#ffffff", 0.1));
+        gc.setStroke(Color.web(accentColor, 0.2));
         gc.setLineWidth(1);
         gc.strokeLine(0, centerY, width, centerY);
         
         // Draw placeholder text
-        gc.setFill(Color.web("#ffffff", 0.3));
+        gc.setFill(Color.web(accentColor, 0.45));
         gc.setFont(javafx.scene.text.Font.font("Consolas", 12));
         String text = "WAVEFORM - Awaiting audio signal";
         double textWidth = gc.getFont().getSize() * text.length() * 0.5;

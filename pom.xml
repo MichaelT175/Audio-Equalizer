@@ -17,6 +17,11 @@
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
+            <artifactId>javafx-media</artifactId>
+            <version>13</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
             <artifactId>javafx-fxml</artifactId>
             <version>13</version>
         </dependency>
@@ -25,6 +30,11 @@
             <artifactId>jdsp</artifactId>
             <version>3.1.0</version>
         </dependency>   
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -47,6 +57,10 @@
                         <id>default-cli</id>
                         <configuration>
                             <mainClass>com.audioeq.EqualizerApp</mainClass>
+                            <options>
+                                <option>--add-modules</option>
+                                <option>javafx.controls,javafx.fxml,javafx.media</option>
+                            </options>
                         </configuration>
                     </execution>
                 </executions>
