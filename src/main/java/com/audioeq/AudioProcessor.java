@@ -3,6 +3,7 @@ package com.audioeq;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -26,6 +27,7 @@ public class AudioProcessor {
     private static boolean stopPlayback = false;
     private static boolean isPaused = false;
     private static final Object pauseLock = new Object();
+    private static int playbackSession = 0;
     
     // Volume control
     private static float masterVolume = 1.0f;
@@ -110,6 +112,17 @@ public class AudioProcessor {
     public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain, 
                                       float initialTrebleGain, VisualizerCanvasFX visualizer, 
                                       SpectrumCanvasFX spectrumCanvas, WaveformCanvasFX waveformCanvas, EqualizerApp eq) {
+        playAudioWithEQ(filePath, initialBassGain, initialMidGain, initialTrebleGain, visualizer,
+            spectrumCanvas, waveformCanvas, eq, null);
+    }
+
+    /**
+     * Plays audio with EQ and all effects (JavaFX version) with optional completion callback.
+     */
+    public static void playAudioWithEQ(String filePath, float initialBassGain, float initialMidGain,
+                                       float initialTrebleGain, VisualizerCanvasFX visualizer,
+                                       SpectrumCanvasFX spectrumCanvas, WaveformCanvasFX waveformCanvas,
+                                       EqualizerApp eq, Runnable onPlaybackFinished) {
         File audioFile = new File(filePath);
 
         if (!audioFile.exists()) {
@@ -123,10 +136,18 @@ public class AudioProcessor {
         echoBuffer = null;
         echoBufferIndex = 0;
         currentTrackGain = 1.0f;
-        stopPlayback = false;
+        int sessionId;
+        synchronized (AudioProcessor.class) {
+            playbackSession++;
+            sessionId = playbackSession;
+            stopPlayback = false;
+        }
 
+        boolean completedNaturally = true;
         try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile)) {
-            AudioFormat format = audioInputStream.getFormat();
+            AudioFormat baseFormat = audioInputStream.getFormat();
+            AudioFormat format = toPcmFormat(baseFormat);
+            try (AudioInputStream decodedStream = AudioSystem.getAudioInputStream(format, audioInputStream)) {
 
             DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
             if (!AudioSystem.isLineSupported(info)) {
@@ -134,7 +155,7 @@ public class AudioProcessor {
             }
 
             SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info);
-            line.open();
+            line.open(format);
             line.start();
             
             byte[] buffer = new byte[4096];
@@ -146,10 +167,11 @@ public class AudioProcessor {
                 currentTrackGain = calculateTrackGain(audioFile, format);
             }
 
-            while ((bytesRead = audioInputStream.read(buffer, 0, buffer.length)) != -1) {
-                if (stopPlayback) {
+            while ((bytesRead = decodedStream.read(buffer, 0, buffer.length)) != -1) {
+                if (stopPlayback || sessionId != playbackSession) {
                     line.stop();
                     line.close();
+                    completedNaturally = false;
                     break;
                 }
 
@@ -168,8 +190,10 @@ public class AudioProcessor {
                 gains[1] = eq.getMidSliderValue();
                 gains[2] = eq.getTrebleSliderValue();
 
+                byte[] processingBuffer = Arrays.copyOf(buffer, bytesRead);
+
                 // Apply EQ to the current buffer
-                byte[] adjustedBuffer = applyEQ(buffer, format, gains[0], gains[1], gains[2]);
+                byte[] adjustedBuffer = applyEQ(processingBuffer, format, gains[0], gains[1], gains[2]);
                 
                 // Apply volume and auto-leveling
                 adjustedBuffer = applyVolumeControl(adjustedBuffer, format);
@@ -186,27 +210,28 @@ public class AudioProcessor {
                 
                 // Update visualizers on JavaFX thread
                 int[] barHeights = calculateBarHeights(adjustedBuffer, numBars, format);
-                double[] spectrumData = notSorted(buffer, numBars, format);
+                double[] spectrumData = notSorted(processingBuffer, numBars, format);
                 
-                Platform.runLater(() -> {
-                    visualizer.updateVisualizer(barHeights);
-                    spectrumCanvas.updateSpectrum(spectrumData);
-                });
-
                 Platform.runLater(() -> {
                     visualizer.updateVisualizer(barHeights);
                     spectrumCanvas.updateSpectrum(spectrumData);
                     waveformCanvas.updateWaveform(finalBuffer, format.getSampleSizeInBits() / 8); // ADD THIS LINE
                 });
-                
-                line.write(adjustedBuffer, 0, bytesRead);
+
+                line.write(adjustedBuffer, 0, adjustedBuffer.length);
             }
 
             line.drain();
             line.close();
+            }
 
         } catch (UnsupportedAudioFileException | IOException | LineUnavailableException e) {
+            completedNaturally = false;
             e.printStackTrace();
+        }
+
+        if (completedNaturally && onPlaybackFinished != null) {
+            Platform.runLater(onPlaybackFinished);
         }
     }
     
@@ -214,7 +239,9 @@ public class AudioProcessor {
      * Calculates track gain for normalization.
      */
     private static float calculateTrackGain(File audioFile, AudioFormat format) {
-        try (AudioInputStream analysisStream = AudioSystem.getAudioInputStream(audioFile)) {
+        AudioFormat targetFormat = toPcmFormat(format);
+        try (AudioInputStream analysisStream = AudioSystem.getAudioInputStream(targetFormat,
+            AudioSystem.getAudioInputStream(audioFile))) {
             byte[] buffer = new byte[4096];
             int bytesRead;
             double sumSquares = 0;
@@ -224,7 +251,7 @@ public class AudioProcessor {
             
             while ((bytesRead = analysisStream.read(buffer, 0, buffer.length)) != -1 && 
                    samplesAnalyzed < maxSamplesToAnalyze) {
-                double[] samples = byteToDouble(buffer, format);
+                double[] samples = byteToDouble(Arrays.copyOf(buffer, bytesRead), targetFormat);
                 for (double sample : samples) {
                     sumSquares += sample * sample;
                     sampleCount++;
@@ -264,9 +291,17 @@ public class AudioProcessor {
             totalGain *= currentTrackGain;
         }
         
+        double maxAbs = 0.0;
         for (int i = 0; i < audioData.length; i++) {
             audioData[i] *= totalGain;
-            audioData[i] = Math.max(-1.0, Math.min(1.0, audioData[i]));
+            maxAbs = Math.max(maxAbs, Math.abs(audioData[i]));
+        }
+
+        if (maxAbs > 1.0) {
+            double scale = 0.98 / maxAbs;
+            for (int i = 0; i < audioData.length; i++) {
+                audioData[i] *= scale;
+            }
         }
         
         return doubleToByte(audioData, format);
@@ -352,6 +387,21 @@ public class AudioProcessor {
         return arr;
     }
 
+    private static AudioFormat toPcmFormat(AudioFormat sourceFormat) {
+        if (sourceFormat.getEncoding() == AudioFormat.Encoding.PCM_SIGNED && sourceFormat.getSampleSizeInBits() == 16) {
+            return sourceFormat;
+        }
+        return new AudioFormat(
+            AudioFormat.Encoding.PCM_SIGNED,
+            sourceFormat.getSampleRate(),
+            16,
+            sourceFormat.getChannels(),
+            sourceFormat.getChannels() * 2,
+            sourceFormat.getSampleRate(),
+            false
+        );
+    }
+
     /**
      * Converts byte buffer to double array.
      */
@@ -434,10 +484,25 @@ public class AudioProcessor {
         double[] combined = new double[audioData.length];
         for (int i = 0; i < combined.length; i++) {
             combined[i] = bassFiltered[i] + midFiltered[i] + trebleFiltered[i];
-            combined[i] = Math.max(-1.0, Math.min(1.0, combined[i]));
+            combined[i] = Math.max(-1.5, Math.min(1.5, combined[i]));
         }
 
-        return doubleToByte(combined, format);
+        return doubleToByte(applyLimiter(combined), format);
+    }
+
+    private static double[] applyLimiter(double[] audioData) {
+        double maxAbs = 0.0;
+        for (double sample : audioData) {
+            maxAbs = Math.max(maxAbs, Math.abs(sample));
+        }
+        if (maxAbs <= 1.0) {
+            return audioData;
+        }
+        double scale = 0.98 / maxAbs;
+        for (int i = 0; i < audioData.length; i++) {
+            audioData[i] *= scale;
+        }
+        return audioData;
     }
 }
 

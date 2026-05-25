@@ -68,6 +68,22 @@ public class SongMenuFX {
     public ComboBox<String> getDropdown() {
         return songDropdown;
     }
+
+    /**
+     * Sets the selected song name.
+     */
+    public void setSelectedSong(String songName) {
+        if (songName != null && songMap.containsKey(songName)) {
+            songDropdown.setValue(songName);
+        }
+    }
+
+    /**
+     * Gets the list of song names.
+     */
+    public List<String> getSongNames() {
+        return new ArrayList<>(songMap.keySet());
+    }
     
     /**
      * Gets the file path of the selected song.
@@ -75,6 +91,45 @@ public class SongMenuFX {
     public String getSelectedSongPath() {
         String selectedSong = songDropdown.getValue();
         return selectedSong != null ? songMap.get(selectedSong) : null;
+    }
+
+    /**
+     * Gets the file path for a song name.
+     */
+    public String getSongPath(String songName) {
+        return songName != null ? songMap.get(songName) : null;
+    }
+
+    /**
+     * Checks if a song name already exists.
+     */
+    public boolean containsSong(String songName) {
+        return songMap.containsKey(songName);
+    }
+
+    /**
+     * Adds a song programmatically (used for online imports).
+     */
+    public boolean addSongEntry(String songName, String filePath) {
+        if (songMap.containsKey(songName)) {
+            return false;
+        }
+        songMap.put(songName, filePath);
+        sortSongs();
+        updateDropdown();
+        return true;
+    }
+
+    /**
+     * Removes a song entry by name (no dialog).
+     */
+    public boolean removeSongEntry(String songName) {
+        if (!songMap.containsKey(songName)) {
+            return false;
+        }
+        songMap.remove(songName);
+        updateDropdown();
+        return true;
     }
     
     /**

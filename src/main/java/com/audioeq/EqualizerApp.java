@@ -13,11 +13,19 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.Tooltip;
 import javafx.scene.effect.DropShadow;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -29,8 +37,20 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Circle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
+
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * PROFESSIONAL AUDIO EQUALIZER - Redesigned with exceptional UI/UX
@@ -52,9 +72,27 @@ public class EqualizerApp extends Application {
     private Label trebleValueLabel;
     private Label volumeValueLabel;
     private Label nowPlayingLabel;
+    private Label searchStatusLabel;
     
     private ComboBox<String> songDropdown;
+    private Button songSelectButton;
+    private String selectedSongName;
+    private OnlineSongResult selectedOnlineSong;
     private SongMenuFX songMenu;
+    private ListView<String> localSongsList;
+    private Stage songPickerStage;
+    private final ObservableList<String> localSongItems = FXCollections.observableArrayList();
+    private TextField searchField;
+    private Button searchButton;
+    private ListView<OnlineSongResult> searchResultsList;
+    private ListView<SongQueueItem> queueList;
+    private final ObservableList<OnlineSongResult> searchResults = FXCollections.observableArrayList();
+    private final ObservableList<SongQueueItem> queueItems = FXCollections.observableArrayList();
+    private final Deque<SongQueueItem> queueHistory = new ArrayDeque<>();
+    private SongQueueItem currentQueueItem;
+    private OnlineSongSearchService onlineSearchService;
+    private OnlineAudioDownloader onlineAudioDownloader;
+    private ExecutorService onlineExecutor;
     
     private CheckBox autoLevelCheckbox;
     private CheckBox echoCancelCheckbox;
@@ -63,6 +101,9 @@ public class EqualizerApp extends Application {
     private SpectrumCanvasFX spectrumCanvas;
     private DBMeterCanvasFX dbMeterCanvas;
     private WaveformCanvasFX waveformCanvas;
+    private StackPane waveformContainer;
+    private StackPane spectrumContainer;
+    private StackPane visualizerContainer;
     
     private PresetManager presetManager = new PresetManager();
     
@@ -74,6 +115,7 @@ public class EqualizerApp extends Application {
     private Theme currentTheme = Theme.CYBER_BLUE;
     private BorderPane root;
     private VBox centerContent;
+    private ScrollPane centerScroll;
     
     @Override
     public void start(Stage primaryStage) {
@@ -81,6 +123,14 @@ public class EqualizerApp extends Application {
         
         // Initialize components
         songMenu = new SongMenuFX();
+        onlineSearchService = new OnlineSongSearchService();
+        onlineAudioDownloader = new OnlineAudioDownloader();
+        searchStatusLabel = new Label(" ");
+        onlineExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "online-audio-worker");
+            t.setDaemon(true);
+            return t;
+        });
         
         // Main layout
         root = new BorderPane();
@@ -89,13 +139,23 @@ public class EqualizerApp extends Application {
         // Create all sections
         root.setTop(createTopBar());
         centerContent = createCenterContent();
-        root.setCenter(centerContent);
+        centerScroll = new ScrollPane(centerContent);
+        centerScroll.setFitToWidth(true);
+        centerScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        centerScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        centerScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        root.setCenter(centerScroll);
         root.setLeft(createLeftPanel());
         root.setBottom(createBottomControls());
         
         Scene scene = new Scene(root, 1400, 800);
         primaryStage.setScene(scene);
         primaryStage.setResizable(true);
+        primaryStage.setOnCloseRequest(e -> {
+            if (onlineExecutor != null) {
+                onlineExecutor.shutdownNow();
+            }
+        });
         
         primaryStage.show();
         
@@ -122,11 +182,11 @@ public class EqualizerApp extends Application {
         
         // Logo/Branding
         VBox branding = new VBox(2);
-        Label brandTitle = new Label("EQUALIZER");
+        Label brandTitle = new Label("AUDIO IN MOTION");
         brandTitle.setFont(Font.font("Consolas", FontWeight.BOLD, 24));
         brandTitle.setTextFill(Paint.valueOf(currentTheme.accentColor));
         
-        Label brandSubtitle = new Label("PRO AUDIO SUITE");
+        Label brandSubtitle = new Label("LISTEN YOUR WAY • PRO AUDIO SUITE");
         brandSubtitle.setFont(Font.font("Consolas", FontWeight.LIGHT, 9));
         brandSubtitle.setTextFill(Paint.valueOf(currentTheme.textSecondary));
         brandSubtitle.setStyle("-fx-letter-spacing: 2px;");
@@ -221,26 +281,26 @@ public class EqualizerApp extends Application {
         waveformCanvas = new WaveformCanvasFX();
         waveformCanvas.setWidth(1000);
         waveformCanvas.setHeight(80);
-        StackPane waveformContainer = createGlassPanel(waveformCanvas, "WAVEFORM");
+        waveformContainer = createGlassPanel(waveformCanvas, "WAVEFORM");
         
         // Spectrum analyzer
         spectrumCanvas = new SpectrumCanvasFX(1024);
         spectrumCanvas.setWidth(1000);
         spectrumCanvas.setHeight(120);
-        StackPane spectrumContainer = createGlassPanel(spectrumCanvas, "FREQUENCY SPECTRUM");
+        spectrumContainer = createGlassPanel(spectrumCanvas, "FREQUENCY SPECTRUM");
         
         // Bar visualizer
         visualizerCanvas = new VisualizerCanvasFX(10);
         visualizerCanvas.setWidth(1000);
         visualizerCanvas.setHeight(100);
-        StackPane visualizerContainer = createGlassPanel(visualizerCanvas, "AMPLITUDE BARS");
+        visualizerContainer = createGlassPanel(visualizerCanvas, "AMPLITUDE BARS");
         
         visualizersBox.getChildren().addAll(
             waveformContainer,
             spectrumContainer,
             visualizerContainer
         );
-        
+
         center.getChildren().addAll(visualizersBox);
         return center;
     }
@@ -261,20 +321,31 @@ public class EqualizerApp extends Application {
         
         StackPane wrapper = new StackPane(container);
         wrapper.setPadding(new Insets(15));
-        wrapper.setStyle(
+        applyGlassPanelStyle(wrapper);
+        
+        return wrapper;
+    }
+
+    private void applyGlassPanelStyle(StackPane panel) {
+        panel.setStyle(
             "-fx-background-color: " + currentTheme.cardBackground + ";" +
             "-fx-background-radius: 12;" +
             "-fx-border-color: " + currentTheme.accentColor + "22;" +
             "-fx-border-width: 1;" +
             "-fx-border-radius: 12;"
         );
-        
         DropShadow shadow = new DropShadow();
         shadow.setColor(Color.web(currentTheme.accentColor, 0.2));
         shadow.setRadius(15);
-        wrapper.setEffect(shadow);
-        
-        return wrapper;
+        panel.setEffect(shadow);
+
+        if (!panel.getChildren().isEmpty() && panel.getChildren().get(0) instanceof VBox) {
+            VBox container = (VBox) panel.getChildren().get(0);
+            if (!container.getChildren().isEmpty() && container.getChildren().get(0) instanceof Label) {
+                Label titleLabel = (Label) container.getChildren().get(0);
+                titleLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+            }
+        }
     }
     
     /**
@@ -425,12 +496,19 @@ public class EqualizerApp extends Application {
         row1.setAlignment(Pos.CENTER);
         
         songDropdown = songMenu.getDropdown();
-        songDropdown.setPrefWidth(300);
-        styleComboBox(songDropdown);
+        selectedSongName = songDropdown.getValue();
+        songSelectButton = new Button();
+        songSelectButton.setPrefWidth(300);
+        songSelectButton.setPrefHeight(34);
+        styleSongSelectButton(songSelectButton);
+        updateSongSelectButtonText();
+        songSelectButton.setOnAction(e -> showSongPicker());
         
         playButton = createModernButton("▶", "Play", currentTheme.playColor);
         pauseButton = createModernButton("⏸", "Pause", currentTheme.pauseColor);
         stopButton = createModernButton("⏹", "Stop", currentTheme.stopColor);
+        Button prevButton = createSecondaryButton("⏮ Prev");
+        Button nextButton = createSecondaryButton("⏭ Next");
         
         playButton.setOnAction(e -> {
             playSelectedSong();
@@ -445,6 +523,8 @@ public class EqualizerApp extends Application {
             AudioProcessor.stopAudioPlayback(true);
             nowPlayingLabel.setText("Stopped");
         });
+        prevButton.setOnAction(e -> playPreviousFromQueue());
+        nextButton.setOnAction(e -> playNextFromQueue(true));
 
         autoLevelCheckbox = createStyledCheckbox("Auto Level");
         autoLevelCheckbox.setSelected(true);
@@ -459,16 +539,11 @@ public class EqualizerApp extends Application {
         
         Button savePresetBtn = createSecondaryButton("💾 Save Preset");
         Button loadPresetBtn = createSecondaryButton("📂 Load Preset");
-        Button addSongBtn = createSecondaryButton("➕ Add Song");
-        Button removeSongBtn = createSecondaryButton("➖ Remove");
         
         savePresetBtn.setOnAction(e -> savePreset());
         loadPresetBtn.setOnAction(e -> loadPreset());
-        addSongBtn.setOnAction(e -> songMenu.addNewFile());
-        removeSongBtn.setOnAction(e -> songMenu.removeSelectedFile());
     
-        row1.getChildren().addAll(songDropdown, playButton, pauseButton, stopButton, autoLevelCheckbox, echoCancelCheckbox, savePresetBtn, loadPresetBtn,
-        addSongBtn, removeSongBtn);
+        row1.getChildren().addAll(songSelectButton, playButton, pauseButton, stopButton, prevButton, nextButton, autoLevelCheckbox, echoCancelCheckbox, savePresetBtn, loadPresetBtn);
 
         bottom.getChildren().addAll(row1);
         return bottom;
@@ -591,6 +666,471 @@ public class EqualizerApp extends Application {
             "-fx-border-radius: 8;"
         );
     }
+
+    private void styleSongSelectButton(Button button) {
+        button.setStyle(
+            "-fx-background-color: " + currentTheme.buttonBackground + ";" +
+            "-fx-text-fill: " + currentTheme.textPrimary + ";" +
+            "-fx-font-family: 'Consolas';" +
+            "-fx-font-size: 12px;" +
+            "-fx-background-radius: 8;" +
+            "-fx-border-color: " + currentTheme.accentColor + "44;" +
+            "-fx-border-width: 1;" +
+            "-fx-border-radius: 8;" +
+            "-fx-alignment: center-left;" +
+            "-fx-padding: 6 12;"
+        );
+    }
+
+    private void updateSongSelectButtonText() {
+        String label;
+        if (selectedOnlineSong != null) {
+            label = "Online: " + selectedOnlineSong.getDisplayName();
+        } else {
+            label = selectedSongName != null ? selectedSongName : "Select Song";
+        }
+        if (songSelectButton != null) {
+            songSelectButton.setText(label + "  ▼");
+        }
+    }
+
+    private void setSelectedSong(String songName) {
+        if (songName == null || songName.isBlank()) {
+            return;
+        }
+        selectedOnlineSong = null;
+        selectedSongName = songName;
+        songMenu.setSelectedSong(songName);
+        updateSongSelectButtonText();
+    }
+
+    private void setSelectedOnlineSong(OnlineSongResult song) {
+        if (song == null) {
+            return;
+        }
+        selectedOnlineSong = song;
+        updateSongSelectButtonText();
+    }
+
+    private void styleTextField(TextField field) {
+        field.setStyle(
+            "-fx-background-color: " + currentTheme.buttonBackground + ";" +
+            "-fx-text-fill: " + currentTheme.textPrimary + ";" +
+            "-fx-prompt-text-fill: " + currentTheme.textSecondary + ";" +
+            "-fx-font-family: 'Consolas';" +
+            "-fx-font-size: 12px;" +
+            "-fx-background-radius: 8;" +
+            "-fx-border-color: " + currentTheme.accentColor + "44;" +
+            "-fx-border-width: 1;" +
+            "-fx-border-radius: 8;"
+        );
+    }
+
+    private void styleListView(ListView<?> listView) {
+        listView.setStyle(
+            "-fx-background-color: " + currentTheme.cardBackground + ";" +
+            "-fx-control-inner-background: " + currentTheme.cardBackground + ";" +
+            "-fx-border-color: " + currentTheme.accentColor + "22;" +
+            "-fx-border-radius: 8;" +
+            "-fx-background-radius: 8;" +
+            "-fx-selection-bar: " + selectionBackground() + ";" +
+            "-fx-selection-bar-non-focused: " + selectionBackground() + ";" +
+            "-fx-selection-bar-text: " + selectionTextColor() + ";"
+        );
+    }
+
+    private String selectionBackground() {
+        return currentTheme.accentColor + "55";
+    }
+
+    private String selectionTextColor() {
+        return "#ffffff";
+    }
+
+    private void showSongPicker() {
+        if (songPickerStage != null && songPickerStage.isShowing()) {
+            songPickerStage.toFront();
+            return;
+        }
+
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabs.setStyle(
+            "-fx-background-color: transparent;" +
+            "-fx-tab-min-width: 180;" +
+            "-fx-tab-min-height: 36;" +
+            "-fx-tab-max-width: 240;"
+        );
+
+        Tab localTab = new Tab("Local Library", createLocalLibraryPane());
+        Tab onlineTab = new Tab("Online Search", createOnlineSearchRow());
+        localTab.setClosable(false);
+        onlineTab.setClosable(false);
+        tabs.getTabs().addAll(localTab, onlineTab);
+
+        Label headerTitle = new Label("SONG SELECTION");
+        headerTitle.setFont(Font.font("Consolas", FontWeight.BOLD, 16));
+        headerTitle.setTextFill(Paint.valueOf(currentTheme.accentColor));
+        headerTitle.setStyle("-fx-letter-spacing: 2px;");
+
+        Label headerSubtitle = new Label("Local library and online search");
+        headerSubtitle.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 10));
+        headerSubtitle.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+
+        VBox headerBox = new VBox(4, headerTitle, headerSubtitle);
+        headerBox.setPadding(new Insets(0, 0, 10, 0));
+
+        BorderPane container = new BorderPane(tabs);
+        container.setPadding(new Insets(20));
+        container.setTop(headerBox);
+        BorderPane.setMargin(tabs, new Insets(10, 0, 0, 0));
+        container.setStyle(
+            "-fx-background-color: linear-gradient(to bottom right, " +
+            currentTheme.bgPrimary + ", " + currentTheme.bgSecondary + ");"
+        );
+
+        Scene scene = new Scene(container, 1180, 700);
+        songPickerStage = new Stage();
+        songPickerStage.setTitle("Select a Song");
+        songPickerStage.initModality(Modality.APPLICATION_MODAL);
+        songPickerStage.setScene(scene);
+        songPickerStage.setOnHidden(e -> songPickerStage = null);
+        songPickerStage.show();
+    }
+
+    private VBox createLocalLibraryPane() {
+        VBox container = new VBox(12);
+        container.setPadding(new Insets(20));
+        container.setStyle(
+            "-fx-background-color: " + currentTheme.cardBackground + ";" +
+            "-fx-background-radius: 12;" +
+            "-fx-border-color: " + currentTheme.accentColor + "22;" +
+            "-fx-border-radius: 12;"
+        );
+
+        Label title = new Label("LOCAL LIBRARY");
+        title.setFont(Font.font("Consolas", FontWeight.BOLD, 12));
+        title.setTextFill(Paint.valueOf(currentTheme.accentColor));
+        title.setStyle("-fx-letter-spacing: 1.5px;");
+
+        Label subtitle = new Label("Select, queue, or manage local files");
+        subtitle.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 9));
+        subtitle.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+
+        localSongsList = new ListView<>();
+        localSongsList.setItems(localSongItems);
+        localSongsList.setPrefHeight(460);
+        styleListView(localSongsList);
+        localSongsList.setCellFactory(list -> createLocalSongCell());
+        refreshLocalSongsList();
+
+        localSongsList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                selectLocalSongAndClose();
+            }
+        });
+
+        HBox buttons = new HBox(10);
+        Button selectBtn = createSecondaryButton("✅ Select");
+        Button addBtn = createSecondaryButton("➕ Add File");
+        Button queueBtn = createSecondaryButton("➕ Queue");
+        Button removeBtn = createSecondaryButton("🗑 Remove");
+
+        selectBtn.setOnAction(e -> selectLocalSongAndClose());
+        addBtn.setOnAction(e -> {
+            songMenu.addNewFile();
+            refreshLocalSongsList();
+            syncSelectedSongFromMenu();
+        });
+        queueBtn.setOnAction(e -> addSelectedLocalToQueue());
+        removeBtn.setOnAction(e -> removeSelectedLocalSong());
+
+        buttons.getChildren().addAll(selectBtn, queueBtn, addBtn, removeBtn);
+        container.getChildren().addAll(title, subtitle, localSongsList, buttons);
+        return container;
+    }
+
+    private void refreshLocalSongsList() {
+        localSongItems.setAll(songMenu.getSongNames());
+        if (selectedSongName != null) {
+            localSongsList.getSelectionModel().select(selectedSongName);
+        }
+    }
+
+    private void syncSelectedSongFromMenu() {
+        String current = songDropdown.getValue();
+        selectedSongName = current;
+        updateSongSelectButtonText();
+    }
+
+    private void selectLocalSongAndClose() {
+        if (localSongsList == null) {
+            return;
+        }
+        String selected = localSongsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Select Song", "Choose a local song to continue.");
+            return;
+        }
+        setSelectedSong(selected);
+        if (songPickerStage != null) {
+            songPickerStage.close();
+        }
+    }
+
+    private void removeSelectedLocalSong() {
+        if (localSongsList == null) {
+            return;
+        }
+        String selected = localSongsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Remove Song", "Select a song to remove.");
+            return;
+        }
+
+        Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmDialog.setTitle("Confirm Removal");
+        confirmDialog.setHeaderText("Remove \"" + selected + "\"?");
+        confirmDialog.setContentText("This will remove the song from the library (not delete the file).");
+
+        if (confirmDialog.showAndWait().filter(btn -> btn == javafx.scene.control.ButtonType.OK).isPresent()) {
+            boolean removed = songMenu.removeSongEntry(selected);
+            if (removed) {
+                refreshLocalSongsList();
+                if (selected.equals(selectedSongName)) {
+                    syncSelectedSongFromMenu();
+                }
+            }
+        }
+    }
+
+    private VBox createOnlineSearchRow() {
+        VBox root = new VBox(16);
+        root.setPadding(new Insets(20));
+        root.setStyle(
+            "-fx-background-color: " + currentTheme.cardBackground + ";" +
+            "-fx-background-radius: 12;" +
+            "-fx-border-color: " + currentTheme.accentColor + "22;" +
+            "-fx-border-radius: 12;"
+        );
+
+        VBox searchBox = new VBox(10);
+        Label searchLabel = new Label("ONLINE SEARCH");
+        searchLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 12));
+        searchLabel.setTextFill(Paint.valueOf(currentTheme.accentColor));
+        searchLabel.setStyle("-fx-letter-spacing: 1.5px;");
+
+        Label searchSubtitle = new Label("Find tracks on YouTube Music");
+        searchSubtitle.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 9));
+        searchSubtitle.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+
+        HBox searchInputRow = new HBox(10);
+        searchField = new TextField();
+        searchField.setPromptText("Search YouTube Music...");
+        searchField.setPrefWidth(520);
+        styleTextField(searchField);
+        searchField.setOnAction(e -> searchOnlineSongs());
+        HBox.setHgrow(searchField, Priority.ALWAYS);
+
+        searchButton = createSecondaryButton("🔍 Search");
+        searchButton.setOnAction(e -> searchOnlineSongs());
+
+        searchInputRow.getChildren().addAll(searchField, searchButton);
+
+        searchStatusLabel = new Label(" ");
+        searchStatusLabel.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 10));
+        searchStatusLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+
+        searchBox.getChildren().addAll(searchLabel, searchSubtitle, searchInputRow, searchStatusLabel);
+
+        HBox listsRow = new HBox(20);
+
+        VBox resultsBox = new VBox(10);
+        Label resultsLabel = new Label("RESULTS");
+        resultsLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 12));
+        resultsLabel.setTextFill(Paint.valueOf(currentTheme.accentColor));
+        resultsLabel.setStyle("-fx-letter-spacing: 1.5px;");
+
+        searchResultsList = new ListView<>();
+        searchResultsList.setItems(searchResults);
+        searchResultsList.setCellFactory(list -> createOnlineSongCell());
+        searchResultsList.setPrefSize(620, 380);
+        styleListView(searchResultsList);
+        searchResultsList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                selectOnlineSong();
+            }
+        });
+
+        HBox resultsButtons = new HBox(10);
+        Button selectBtn = createSecondaryButton("✅ Select");
+        Button addQueueBtn = createSecondaryButton("➕ Queue");
+        Button importBtn = createSecondaryButton("⬇ Import");
+        selectBtn.setOnAction(e -> selectOnlineSong());
+        addQueueBtn.setOnAction(e -> addSelectedToQueue());
+        importBtn.setOnAction(e -> importSelectedSong());
+        resultsButtons.getChildren().addAll(selectBtn, addQueueBtn, importBtn);
+
+        resultsBox.getChildren().addAll(resultsLabel, searchResultsList, resultsButtons);
+
+        VBox queueBox = new VBox(10);
+        Label queueLabel = new Label("QUEUE");
+        queueLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 12));
+        queueLabel.setTextFill(Paint.valueOf(currentTheme.accentColor));
+        queueLabel.setStyle("-fx-letter-spacing: 1.5px;");
+
+        queueList = new ListView<>();
+        queueList.setItems(queueItems);
+        queueList.setCellFactory(list -> createQueueItemCell());
+        queueList.setPrefSize(420, 380);
+        styleListView(queueList);
+        queueList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                removeSelectedQueueItem();
+            }
+        });
+
+        HBox queueButtons = new HBox(10);
+        Button removeQueueBtn = createSecondaryButton("🗑 Remove");
+        Button clearQueueBtn = createSecondaryButton("🧹 Clear");
+        removeQueueBtn.setOnAction(e -> removeSelectedQueueItem());
+        clearQueueBtn.setOnAction(e -> queueItems.clear());
+        queueButtons.getChildren().addAll(removeQueueBtn, clearQueueBtn);
+
+        queueBox.getChildren().addAll(queueLabel, queueList, queueButtons);
+
+        HBox.setHgrow(resultsBox, Priority.ALWAYS);
+        listsRow.getChildren().addAll(resultsBox, queueBox);
+
+        root.getChildren().addAll(searchBox, listsRow);
+        return root;
+    }
+
+    private ListCell<OnlineSongResult> createOnlineSongCell() {
+        return new ListCell<>() {
+            private final ImageView thumbnail = new ImageView();
+            private final Label titleLabel = new Label();
+            private final Label artistLabel = new Label();
+            private final Label durationLabel = new Label();
+            private final VBox textBox = new VBox(2, titleLabel, artistLabel);
+            private final Region spacer = new Region();
+            private final HBox content = new HBox(10, thumbnail, textBox, spacer, durationLabel);
+
+            {
+                thumbnail.setFitWidth(48);
+                thumbnail.setFitHeight(48);
+                thumbnail.setPreserveRatio(true);
+                titleLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 11));
+                titleLabel.setTextFill(Paint.valueOf(currentTheme.textPrimary));
+                artistLabel.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 9));
+                artistLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+                durationLabel.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 9));
+                durationLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                setStyle("-fx-padding: 6;");
+            }
+
+            @Override
+            protected void updateItem(OnlineSongResult item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setStyle("");
+                } else {
+                    if (item.getThumbnailUrl() != null && !item.getThumbnailUrl().isEmpty()) {
+                        thumbnail.setImage(new Image(item.getThumbnailUrl(), true));
+                    } else {
+                        thumbnail.setImage(null);
+                    }
+                    titleLabel.setText(item.getTitle());
+                    artistLabel.setText(item.getArtist().isEmpty() ? "YouTube Music" : item.getArtist());
+                    durationLabel.setText(item.getDuration());
+
+                    if (isSelected()) {
+                        setStyle("-fx-background-color: " + selectionBackground() + "; -fx-background-radius: 8;");
+                        titleLabel.setTextFill(Paint.valueOf(selectionTextColor()));
+                        artistLabel.setTextFill(Paint.valueOf(selectionTextColor()));
+                        durationLabel.setTextFill(Paint.valueOf(selectionTextColor()));
+                    } else {
+                        setStyle("");
+                        titleLabel.setTextFill(Paint.valueOf(currentTheme.textPrimary));
+                        artistLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+                        durationLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+                    }
+                    setGraphic(content);
+                }
+            }
+        };
+    }
+
+    private ListCell<SongQueueItem> createQueueItemCell() {
+        return new ListCell<>() {
+            private final ImageView thumbnail = new ImageView();
+            private final Label titleLabel = new Label();
+            private final Label sourceLabel = new Label();
+            private final VBox textBox = new VBox(2, titleLabel, sourceLabel);
+            private final HBox content = new HBox(10, thumbnail, textBox);
+
+            {
+                thumbnail.setFitWidth(40);
+                thumbnail.setFitHeight(40);
+                thumbnail.setPreserveRatio(true);
+                titleLabel.setFont(Font.font("Consolas", FontWeight.BOLD, 11));
+                sourceLabel.setFont(Font.font("Consolas", FontWeight.SEMI_BOLD, 9));
+                sourceLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+            }
+
+            @Override
+            protected void updateItem(SongQueueItem item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    setStyle("");
+                } else {
+                    if (item.isOnline() && item.getOnlineSource() != null && !item.getOnlineSource().getThumbnailUrl().isEmpty()) {
+                        thumbnail.setImage(new Image(item.getOnlineSource().getThumbnailUrl(), true));
+                    } else {
+                        thumbnail.setImage(null);
+                    }
+                    titleLabel.setText(item.getDisplayName());
+                    sourceLabel.setText(item.isOnline() ? "Online" : "Local");
+
+                    if (isSelected()) {
+                        setStyle("-fx-background-color: " + selectionBackground() + "; -fx-background-radius: 8;");
+                        titleLabel.setTextFill(Paint.valueOf(selectionTextColor()));
+                        sourceLabel.setTextFill(Paint.valueOf(selectionTextColor()));
+                    } else {
+                        setStyle("");
+                        titleLabel.setTextFill(Paint.valueOf(currentTheme.textPrimary));
+                        sourceLabel.setTextFill(Paint.valueOf(currentTheme.textSecondary));
+                    }
+                    setGraphic(content);
+                }
+            }
+        };
+    }
+
+    private ListCell<String> createLocalSongCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item);
+                    if (isSelected()) {
+                        setStyle("-fx-background-color: " + selectionBackground() + "; -fx-text-fill: " + selectionTextColor() + "; -fx-background-radius: 8;");
+                    } else {
+                        setStyle("-fx-text-fill: " + currentTheme.textPrimary + ";");
+                    }
+                }
+            }
+        };
+    }
     
     /**
      * Switches to a new theme with animation
@@ -636,10 +1176,17 @@ public class EqualizerApp extends Application {
         root.setLeft(createLeftPanel());
         root.setBottom(createBottomControls());
         
-        // Update center content styles
-        centerContent.getChildren().clear();
-        VBox newCenter = createCenterContent();
-        centerContent.getChildren().addAll(newCenter.getChildren());
+        // Update center content styles without recreating visualizers
+        applyThemeBackground();
+        if (waveformContainer != null) {
+            applyGlassPanelStyle(waveformContainer);
+        }
+        if (spectrumContainer != null) {
+            applyGlassPanelStyle(spectrumContainer);
+        }
+        if (visualizerContainer != null) {
+            applyGlassPanelStyle(visualizerContainer);
+        }
     }
     
     /**
@@ -679,16 +1226,242 @@ public class EqualizerApp extends Application {
         return String.format("#%02X%02X%02X", 
             (int)(r * 255), (int)(g * 255), (int)(b * 255));
     }
+
+    private void searchOnlineSongs() {
+        String query = searchField != null ? searchField.getText().trim() : "";
+        if (query.isEmpty()) {
+            showInfo("Search", "Enter a song title or artist to search.");
+            return;
+        }
+
+        searchButton.setDisable(true);
+        searchStatusLabel.setText("Searching...");
+
+        Task<List<OnlineSongResult>> task = new Task<>() {
+            @Override
+            protected List<OnlineSongResult> call() throws Exception {
+                return onlineSearchService.search(query, 12);
+            }
+        };
+
+        task.setOnSucceeded(e -> {
+            List<OnlineSongResult> results = task.getValue();
+            searchResults.setAll(results);
+            searchStatusLabel.setText("Found " + results.size() + " results");
+            searchButton.setDisable(false);
+        });
+
+        task.setOnFailed(e -> {
+            searchStatusLabel.setText("Search failed");
+            searchButton.setDisable(false);
+            showError("Online Search Error", task.getException() != null ? task.getException().getMessage() : "Search failed.");
+        });
+
+        onlineExecutor.submit(task);
+    }
+
+    private void playSelectedSearchResult() {
+        OnlineSongResult selected = searchResultsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Play Online", "Select a song from the search results.");
+            return;
+        }
+        playOnlineSong(selected, true);
+    }
+
+    private void selectOnlineSong() {
+        OnlineSongResult selected = searchResultsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Select Song", "Select a song from the search results.");
+            return;
+        }
+        setSelectedOnlineSong(selected);
+        if (songPickerStage != null) {
+            songPickerStage.close();
+        }
+    }
+
+    private void addSelectedToQueue() {
+        OnlineSongResult selected = searchResultsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Queue", "Select a song to add to the queue.");
+            return;
+        }
+        queueItems.add(SongQueueItem.forOnline(selected));
+        searchStatusLabel.setText("Added to queue");
+    }
+
+    private void addSelectedLocalToQueue() {
+        if (localSongsList == null) {
+            return;
+        }
+        String selected = localSongsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Queue", "Select a local song to queue.");
+            return;
+        }
+        String path = songMenu.getSongPath(selected);
+        if (path == null) {
+            showError("Queue", "Selected song path was not found.");
+            return;
+        }
+        queueItems.add(SongQueueItem.forLocal(selected, path));
+        showInfo("Queue", "Added \"" + selected + "\" to the queue.");
+    }
+
+    private void importSelectedSong() {
+        OnlineSongResult selected = searchResultsList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Import", "Select a song to import.");
+            return;
+        }
+
+        downloadOnlineSong(selected, path -> {
+            String baseName = selected.getDisplayName();
+            String uniqueName = ensureUniqueSongName(baseName);
+            boolean added = songMenu.addSongEntry(uniqueName, path.toString());
+            if (added) {
+                if (localSongsList != null) {
+                    refreshLocalSongsList();
+                }
+                showInfo("Import Complete", "Added \"" + uniqueName + "\" to your library.");
+            } else {
+                showInfo("Import", "That song is already in your library.");
+            }
+        });
+    }
+
+    private void playSelectedQueueItem() {
+        SongQueueItem selected = queueList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Queue", "Select a queued song to play.");
+            return;
+        }
+        queueItems.remove(selected);
+        playQueueItem(selected, true);
+    }
+
+    private void removeSelectedQueueItem() {
+        SongQueueItem selected = queueList.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showInfo("Queue", "Select a queued song to remove.");
+            return;
+        }
+        queueItems.remove(selected);
+    }
+
+    private void playNextFromQueue() {
+        playNextFromQueue(true);
+    }
+
+    private void playNextFromQueue(boolean userInitiated) {
+        if (queueItems.isEmpty()) {
+            if (userInitiated) {
+                showInfo("Queue", "The queue is empty.");
+            }
+            return;
+        }
+        SongQueueItem next = queueItems.remove(0);
+        playQueueItem(next, true);
+    }
+
+    private void playQueueItem(SongQueueItem item, boolean continueQueue) {
+        if (currentQueueItem != null && currentQueueItem != item) {
+            queueHistory.push(currentQueueItem);
+        }
+        currentQueueItem = item;
+
+        if (item.isOnline() && item.getOnlineSource() != null) {
+            setSelectedOnlineSong(item.getOnlineSource());
+            playOnlineSong(item.getOnlineSource(), continueQueue);
+        } else if (item.getFilePath() != null) {
+            setSelectedSong(item.getDisplayName());
+            nowPlayingLabel.setText(item.getDisplayName());
+            startPlayback(item.getFilePath(), continueQueue ? () -> playNextFromQueue(false) : null);
+        }
+    }
+
+    private void playPreviousFromQueue() {
+        if (queueHistory.isEmpty()) {
+            showInfo("Queue", "No previous song in queue history.");
+            return;
+        }
+        if (currentQueueItem != null) {
+            queueItems.add(0, currentQueueItem);
+        }
+        SongQueueItem previous = queueHistory.pop();
+        playQueueItem(previous, true);
+    }
+
+    private void playOnlineSong(OnlineSongResult song, boolean continueQueue) {
+        searchStatusLabel.setText("Downloading...");
+        setSelectedOnlineSong(song);
+        downloadOnlineSong(song, path -> {
+            nowPlayingLabel.setText(song.getDisplayName());
+            searchStatusLabel.setText("Playing");
+            startPlayback(path.toString(), continueQueue ? () -> playNextFromQueue(false) : null);
+        });
+    }
+
+    private void downloadOnlineSong(OnlineSongResult song, Consumer<Path> onSuccess) {
+        Task<Path> task = new Task<>() {
+            @Override
+            protected Path call() throws Exception {
+                return onlineAudioDownloader.getOrDownload(song);
+            }
+        };
+
+        task.setOnSucceeded(e -> {
+            Path result = task.getValue();
+            if (result != null) {
+                onSuccess.accept(result);
+            } else {
+                searchStatusLabel.setText("Download failed");
+                showError("Download Error", "Downloaded file was not available.");
+            }
+        });
+
+        task.setOnFailed(e -> {
+            searchStatusLabel.setText("Download failed");
+            showError("Download Error", task.getException() != null ? task.getException().getMessage() : "Download failed.");
+        });
+
+        onlineExecutor.submit(task);
+    }
+
+    private String ensureUniqueSongName(String baseName) {
+        String name = baseName;
+        int counter = 2;
+        while (songMenu.containsSong(name)) {
+            name = baseName + " (" + counter + ")";
+            counter++;
+        }
+        return name;
+    }
+
+    private void startPlayback(String filePath, Runnable onFinished) {
+        AudioProcessor.stopAudioPlayback(true);
+        AudioProcessor.unpauseAudioPlayback();
+        Thread playbackThread = new Thread(() -> AudioProcessor.playAudioWithEQ(
+            filePath, bassGain, midGain, trebleGain,
+            visualizerCanvas, spectrumCanvas, waveformCanvas, this, onFinished
+        ));
+        playbackThread.setDaemon(true);
+        playbackThread.start();
+    }
     
     // Existing methods from original code
     
     private void playSelectedSong() {
+        if (selectedOnlineSong != null) {
+            currentQueueItem = null;
+            playOnlineSong(selectedOnlineSong, true);
+            return;
+        }
         String filePath = songMenu.getSelectedSongPath();
         if (filePath != null) {
-            new Thread(() -> AudioProcessor.playAudioWithEQ(
-                filePath, bassGain, midGain, trebleGain,
-                visualizerCanvas, spectrumCanvas, waveformCanvas, this
-            )).start();
+            currentQueueItem = null;
+            startPlayback(filePath, null);
         }
     }
     
@@ -758,16 +1531,31 @@ public class EqualizerApp extends Application {
             "• Master Volume: Control overall output (0-200%)\n" +
             "• Auto Level: Normalize volume across tracks\n" +
             "• Echo Cancel: Reduce echo artifacts\n\n" +
+            "SONG SELECTION:\n" +
+            "• Use Select Song to open local + online picker\n\n" +
             "VISUALIZERS:\n" +
             "• Waveform: Time-domain audio representation\n" +
             "• Spectrum: Frequency analysis in real-time\n" +
             "• Bars: Amplitude visualization\n" +
             "• dB Meter: Output level monitoring\n\n" +
+            "ONLINE SEARCH:\n" +
+            "• Search YouTube Music and queue or import tracks\n" +
+            "• Install yt-dlp: pip install yt-dlp\n" +
+            "• Install ffmpeg and add it to PATH for WAV extraction\n" +
+            "• Imported tracks appear in the song dropdown\n\n" +
             "THEMES:\n" +
             "Click colored circles in top bar to change theme\n\n" +
             "PRESETS:\n" +
             "Save and load custom EQ settings per song"
         );
+        alert.showAndWait();
+    }
+
+    private void showError(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
         alert.showAndWait();
     }
     
