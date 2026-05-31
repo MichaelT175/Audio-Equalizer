@@ -350,24 +350,43 @@ public class AudioProcessor {
     }
 
     /**
-     * Calculates bar heights for visualizer.
+     * Calculates bar heights for visualizer using logarithmically spaced frequency bands.
+     * This matches human hearing perception where each octave gets equal visual weight.
      */
     private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format) {
         double[] newBuffer = byteToDouble(buffer, format);
         FastFourier fft = new FastFourier(newBuffer);
         fft.transform();
         double[] perFreqMagnitude = fft.getMagnitude(true);
-        int numBinsPerBar = perFreqMagnitude.length / numBars;
+
+        float sampleRate = format.getSampleRate();
+        // Only use the first half of the FFT (positive frequencies up to Nyquist)
+        int usableBins = perFreqMagnitude.length / 2;
+
+        // Logarithmically spaced band edges from ~60 Hz to ~16 kHz (or Nyquist if lower)
+        double minFreq = 60.0;
+        double maxFreq = Math.min(16000.0, sampleRate / 2.0 - 1);
+        double freqPerBin = sampleRate / (double) perFreqMagnitude.length;
 
         int[] heights = new int[numBars];
-        for (int i = 0; i < heights.length; i++) {
-            double barWeight = 0;
-            int start = i * numBinsPerBar + 1;
-            int end = (i + 1) * numBinsPerBar;
-            for (int j = start; j < end; j++) {
-                barWeight += perFreqMagnitude[j];
+        for (int i = 0; i < numBars; i++) {
+            // Logarithmic band edges
+            double lowFreq = minFreq * Math.pow(maxFreq / minFreq, (double) i / numBars);
+            double highFreq = minFreq * Math.pow(maxFreq / minFreq, (double) (i + 1) / numBars);
+
+            int startBin = Math.max(1, (int) (lowFreq / freqPerBin));
+            int endBin = Math.min(usableBins - 1, (int) (highFreq / freqPerBin));
+
+            double sum = 0;
+            int count = 0;
+            for (int j = startBin; j <= endBin; j++) {
+                sum += perFreqMagnitude[j];
+                count++;
             }
-            heights[i] = (int)(barWeight);
+
+            // Average magnitude for this band (avoids higher bars just because more bins)
+            double avg = (count > 0) ? sum / count : 0;
+            heights[i] = (int) avg;
         }
         return heights;
     }
