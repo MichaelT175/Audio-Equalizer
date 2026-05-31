@@ -223,9 +223,9 @@ public class AudioProcessor {
             midPeakFilters = new BiquadFilter[channels];
             trebleShelfFilters = new BiquadFilter[channels];
             for (int ch = 0; ch < channels; ch++) {
-                bassShelfFilters[ch] = BiquadFilter.lowShelf(sampleRate, 200.0, bassGain);
-                midPeakFilters[ch] = BiquadFilter.peaking(sampleRate, 1000.0, 0.7, midGain);
-                trebleShelfFilters[ch] = BiquadFilter.highShelf(sampleRate, 2000.0, trebleGain);
+                bassShelfFilters[ch] = BiquadFilter.lowShelf(sampleRate, 250.0, bassGain);
+                midPeakFilters[ch] = BiquadFilter.peaking(sampleRate, 1000.0, 0.5, midGain);
+                trebleShelfFilters[ch] = BiquadFilter.highShelf(sampleRate, 3500.0, trebleGain);
             }
             lastBassGain = bassGain;
             lastMidGain = midGain;
@@ -233,9 +233,9 @@ public class AudioProcessor {
         } else if (gainsChanged) {
             // Update coefficients without resetting filter state (smooth transitions)
             for (int ch = 0; ch < channels; ch++) {
-                BiquadFilter.configureLowShelf(bassShelfFilters[ch], sampleRate, 200.0, bassGain);
-                BiquadFilter.configurePeaking(midPeakFilters[ch], sampleRate, 1000.0, 0.7, midGain);
-                BiquadFilter.configureHighShelf(trebleShelfFilters[ch], sampleRate, 2000.0, trebleGain);
+                BiquadFilter.configureLowShelf(bassShelfFilters[ch], sampleRate, 250.0, bassGain);
+                BiquadFilter.configurePeaking(midPeakFilters[ch], sampleRate, 1000.0, 0.5, midGain);
+                BiquadFilter.configureHighShelf(trebleShelfFilters[ch], sampleRate, 3500.0, trebleGain);
             }
             lastBassGain = bassGain;
             lastMidGain = midGain;
