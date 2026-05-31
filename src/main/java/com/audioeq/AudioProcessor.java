@@ -28,14 +28,6 @@ public class AudioProcessor {
     private static final Object pauseLock = new Object();
     private static int playbackSession = 0;
     
-    // Stateful biquad filters that persist between audio frames
-    private static BiquadFilter[] bassFilters;
-    private static BiquadFilter[] midHighPassFilters;
-    private static BiquadFilter[] midLowPassFilters;
-    private static BiquadFilter[] trebleFilters;
-    private static float lastSampleRate = -1;
-    private static int lastChannels = -1;
-    
     // Volume control
     private static float masterVolume = 1.0f;
     
@@ -56,6 +48,7 @@ public class AudioProcessor {
 
     /**
      * Biquad IIR filter (Direct Form II Transposed) that maintains state between frames.
+     * Uses Audio EQ Cookbook formulas (Robert Bristow-Johnson) for shelving and peaking filters.
      */
     private static class BiquadFilter {
         private double b0, b1, b2, a1, a2;
@@ -76,50 +69,177 @@ public class AudioProcessor {
             return output;
         }
 
-        public static BiquadFilter lowPass(double sampleRate, double cutoff) {
+        /**
+         * Updates filter coefficients without resetting state (for real-time gain changes).
+         */
+        public void updateCoefficients(double b0, double b1, double b2, double a0, double a1, double a2) {
+            this.b0 = b0 / a0;
+            this.b1 = b1 / a0;
+            this.b2 = b2 / a0;
+            this.a1 = a1 / a0;
+            this.a2 = a2 / a0;
+        }
+
+        /**
+         * Low shelf filter - boosts/cuts frequencies below the cutoff.
+         * At 0 dB gain, this is a perfect pass-through.
+         */
+        public static BiquadFilter lowShelf(double sampleRate, double cutoff, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
             double w0 = 2.0 * Math.PI * cutoff / sampleRate;
-            double alpha = Math.sin(w0) / (2.0 * Math.sqrt(2.0));
             double cosW0 = Math.cos(w0);
-            double b0 = (1.0 - cosW0) / 2.0;
-            double b1 = 1.0 - cosW0;
-            double b2 = (1.0 - cosW0) / 2.0;
-            double a0 = 1.0 + alpha;
-            double a1 = -2.0 * cosW0;
-            double a2 = 1.0 - alpha;
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / 2.0 * Math.sqrt(2.0); // S = 1 (shelf slope)
+            double sqrtA2alpha = 2.0 * Math.sqrt(A) * alpha;
+
+            double b0 = A * ((A + 1) - (A - 1) * cosW0 + sqrtA2alpha);
+            double b1 = 2.0 * A * ((A - 1) - (A + 1) * cosW0);
+            double b2 = A * ((A + 1) - (A - 1) * cosW0 - sqrtA2alpha);
+            double a0 = (A + 1) + (A - 1) * cosW0 + sqrtA2alpha;
+            double a1 = -2.0 * ((A - 1) + (A + 1) * cosW0);
+            double a2 = (A + 1) + (A - 1) * cosW0 - sqrtA2alpha;
+
             return new BiquadFilter(b0, b1, b2, a0, a1, a2);
         }
 
-        public static BiquadFilter highPass(double sampleRate, double cutoff) {
+        /**
+         * High shelf filter - boosts/cuts frequencies above the cutoff.
+         * At 0 dB gain, this is a perfect pass-through.
+         */
+        public static BiquadFilter highShelf(double sampleRate, double cutoff, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
             double w0 = 2.0 * Math.PI * cutoff / sampleRate;
-            double alpha = Math.sin(w0) / (2.0 * Math.sqrt(2.0));
             double cosW0 = Math.cos(w0);
-            double b0 = (1.0 + cosW0) / 2.0;
-            double b1 = -(1.0 + cosW0);
-            double b2 = (1.0 + cosW0) / 2.0;
-            double a0 = 1.0 + alpha;
-            double a1 = -2.0 * cosW0;
-            double a2 = 1.0 - alpha;
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / 2.0 * Math.sqrt(2.0);
+            double sqrtA2alpha = 2.0 * Math.sqrt(A) * alpha;
+
+            double b0 = A * ((A + 1) + (A - 1) * cosW0 + sqrtA2alpha);
+            double b1 = -2.0 * A * ((A - 1) + (A + 1) * cosW0);
+            double b2 = A * ((A + 1) + (A - 1) * cosW0 - sqrtA2alpha);
+            double a0 = (A + 1) - (A - 1) * cosW0 + sqrtA2alpha;
+            double a1 = 2.0 * ((A - 1) - (A + 1) * cosW0);
+            double a2 = (A + 1) - (A - 1) * cosW0 - sqrtA2alpha;
+
             return new BiquadFilter(b0, b1, b2, a0, a1, a2);
+        }
+
+        /**
+         * Peaking EQ filter - boosts/cuts frequencies around the center frequency.
+         * At 0 dB gain, this is a perfect pass-through.
+         */
+        public static BiquadFilter peaking(double sampleRate, double centerFreq, double Q, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
+            double w0 = 2.0 * Math.PI * centerFreq / sampleRate;
+            double cosW0 = Math.cos(w0);
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / (2.0 * Q);
+
+            double b0 = 1.0 + alpha * A;
+            double b1 = -2.0 * cosW0;
+            double b2 = 1.0 - alpha * A;
+            double a0 = 1.0 + alpha / A;
+            double a1 = -2.0 * cosW0;
+            double a2 = 1.0 - alpha / A;
+
+            return new BiquadFilter(b0, b1, b2, a0, a1, a2);
+        }
+
+        public static void configureLowShelf(BiquadFilter filter, double sampleRate, double cutoff, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
+            double w0 = 2.0 * Math.PI * cutoff / sampleRate;
+            double cosW0 = Math.cos(w0);
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / 2.0 * Math.sqrt(2.0);
+            double sqrtA2alpha = 2.0 * Math.sqrt(A) * alpha;
+
+            double b0 = A * ((A + 1) - (A - 1) * cosW0 + sqrtA2alpha);
+            double b1 = 2.0 * A * ((A - 1) - (A + 1) * cosW0);
+            double b2 = A * ((A + 1) - (A - 1) * cosW0 - sqrtA2alpha);
+            double a0 = (A + 1) + (A - 1) * cosW0 + sqrtA2alpha;
+            double a1 = -2.0 * ((A - 1) + (A + 1) * cosW0);
+            double a2 = (A + 1) + (A - 1) * cosW0 - sqrtA2alpha;
+
+            filter.updateCoefficients(b0, b1, b2, a0, a1, a2);
+        }
+
+        public static void configureHighShelf(BiquadFilter filter, double sampleRate, double cutoff, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
+            double w0 = 2.0 * Math.PI * cutoff / sampleRate;
+            double cosW0 = Math.cos(w0);
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / 2.0 * Math.sqrt(2.0);
+            double sqrtA2alpha = 2.0 * Math.sqrt(A) * alpha;
+
+            double b0 = A * ((A + 1) + (A - 1) * cosW0 + sqrtA2alpha);
+            double b1 = -2.0 * A * ((A - 1) + (A + 1) * cosW0);
+            double b2 = A * ((A + 1) + (A - 1) * cosW0 - sqrtA2alpha);
+            double a0 = (A + 1) - (A - 1) * cosW0 + sqrtA2alpha;
+            double a1 = 2.0 * ((A - 1) - (A + 1) * cosW0);
+            double a2 = (A + 1) - (A - 1) * cosW0 - sqrtA2alpha;
+
+            filter.updateCoefficients(b0, b1, b2, a0, a1, a2);
+        }
+
+        public static void configurePeaking(BiquadFilter filter, double sampleRate, double centerFreq, double Q, double gainDB) {
+            double A = Math.pow(10, gainDB / 40.0);
+            double w0 = 2.0 * Math.PI * centerFreq / sampleRate;
+            double cosW0 = Math.cos(w0);
+            double sinW0 = Math.sin(w0);
+            double alpha = sinW0 / (2.0 * Q);
+
+            double b0 = 1.0 + alpha * A;
+            double b1 = -2.0 * cosW0;
+            double b2 = 1.0 - alpha * A;
+            double a0 = 1.0 + alpha / A;
+            double a1 = -2.0 * cosW0;
+            double a2 = 1.0 - alpha / A;
+
+            filter.updateCoefficients(b0, b1, b2, a0, a1, a2);
         }
     }
 
+    // Per-channel EQ filter instances (stateful, persist between frames)
+    private static BiquadFilter[] bassShelfFilters;
+    private static BiquadFilter[] midPeakFilters;
+    private static BiquadFilter[] trebleShelfFilters;
+    private static float lastSampleRate = -1;
+    private static int lastChannels = -1;
+    private static float lastBassGain = Float.NaN;
+    private static float lastMidGain = Float.NaN;
+    private static float lastTrebleGain = Float.NaN;
+
     /**
-     * Initializes the stateful filters if the format has changed.
+     * Initializes or reconfigures the stateful EQ filters.
      */
-    private static void initFilters(float sampleRate, int channels) {
-        if (sampleRate != lastSampleRate || channels != lastChannels) {
+    private static void initFilters(float sampleRate, int channels, float bassGain, float midGain, float trebleGain) {
+        boolean formatChanged = (sampleRate != lastSampleRate || channels != lastChannels);
+        boolean gainsChanged = (bassGain != lastBassGain || midGain != lastMidGain || trebleGain != lastTrebleGain);
+
+        if (formatChanged) {
             lastSampleRate = sampleRate;
             lastChannels = channels;
-            bassFilters = new BiquadFilter[channels];
-            midHighPassFilters = new BiquadFilter[channels];
-            midLowPassFilters = new BiquadFilter[channels];
-            trebleFilters = new BiquadFilter[channels];
+            bassShelfFilters = new BiquadFilter[channels];
+            midPeakFilters = new BiquadFilter[channels];
+            trebleShelfFilters = new BiquadFilter[channels];
             for (int ch = 0; ch < channels; ch++) {
-                bassFilters[ch] = BiquadFilter.lowPass(sampleRate, 200.0);
-                midHighPassFilters[ch] = BiquadFilter.highPass(sampleRate, 200.0);
-                midLowPassFilters[ch] = BiquadFilter.lowPass(sampleRate, 2000.0);
-                trebleFilters[ch] = BiquadFilter.highPass(sampleRate, 2000.0);
+                bassShelfFilters[ch] = BiquadFilter.lowShelf(sampleRate, 200.0, bassGain);
+                midPeakFilters[ch] = BiquadFilter.peaking(sampleRate, 1000.0, 0.7, midGain);
+                trebleShelfFilters[ch] = BiquadFilter.highShelf(sampleRate, 2000.0, trebleGain);
             }
+            lastBassGain = bassGain;
+            lastMidGain = midGain;
+            lastTrebleGain = trebleGain;
+        } else if (gainsChanged) {
+            // Update coefficients without resetting filter state (smooth transitions)
+            for (int ch = 0; ch < channels; ch++) {
+                BiquadFilter.configureLowShelf(bassShelfFilters[ch], sampleRate, 200.0, bassGain);
+                BiquadFilter.configurePeaking(midPeakFilters[ch], sampleRate, 1000.0, 0.7, midGain);
+                BiquadFilter.configureHighShelf(trebleShelfFilters[ch], sampleRate, 2000.0, trebleGain);
+            }
+            lastBassGain = bassGain;
+            lastMidGain = midGain;
+            lastTrebleGain = trebleGain;
         }
     }
 
@@ -129,6 +249,9 @@ public class AudioProcessor {
     private static void resetFilters() {
         lastSampleRate = -1;
         lastChannels = -1;
+        lastBassGain = Float.NaN;
+        lastMidGain = Float.NaN;
+        lastTrebleGain = Float.NaN;
     }
 
     /**
@@ -543,42 +666,34 @@ public class AudioProcessor {
     }
 
     /**
-     * Applies EQ using stateful biquad filters that preserve state between frames.
+     * Applies EQ using stateful shelving/peaking biquad filters in series.
+     * This architecture guarantees no distortion at 0 dB gain (perfect pass-through)
+     * and maintains filter state between frames to prevent discontinuities.
      */
     private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
         float sampleRate = format.getSampleRate();
         int channels = format.getChannels();
 
-        // Initialize filters (only recreates if format changed)
-        initFilters(sampleRate, channels);
+        // Initialize or update filters (preserves state, only updates coefficients on gain change)
+        initFilters(sampleRate, channels, bassGain, midGain, trebleGain);
 
         double[] audioData = byteToDouble(buffer, format);
 
-        // Pre-compute linear gains from dB
-        double bassLinear = Math.pow(10, bassGain / 20.0);
-        double midLinear = Math.pow(10, midGain / 20.0);
-        double trebleLinear = Math.pow(10, trebleGain / 20.0);
-
-        // Process sample-by-sample with stateful filters
-        double[] combined = new double[audioData.length];
+        // Process sample-by-sample: signal flows through bass shelf → mid peak → treble shelf in series
+        double[] output = new double[audioData.length];
         for (int i = 0; i < audioData.length; i++) {
             int ch = i % channels;
             double sample = audioData[i];
 
-            // Bass: Low-pass filter at 200 Hz
-            double bassSample = bassFilters[ch].process(sample) * bassLinear;
+            // Cascade: low shelf → peaking mid → high shelf
+            sample = bassShelfFilters[ch].process(sample);
+            sample = midPeakFilters[ch].process(sample);
+            sample = trebleShelfFilters[ch].process(sample);
 
-            // Mid: Band-pass (high-pass at 200 Hz cascaded with low-pass at 2000 Hz)
-            double midSample = midLowPassFilters[ch].process(midHighPassFilters[ch].process(sample)) * midLinear;
-
-            // Treble: High-pass filter at 2000 Hz
-            double trebleSample = trebleFilters[ch].process(sample) * trebleLinear;
-
-            combined[i] = bassSample + midSample + trebleSample;
-            combined[i] = Math.max(-1.5, Math.min(1.5, combined[i]));
+            output[i] = sample;
         }
 
-        return doubleToByte(applyLimiter(combined), format);
+        return doubleToByte(applyLimiter(output), format);
     }
 
     private static double[] applyLimiter(double[] audioData) {
