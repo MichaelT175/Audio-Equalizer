@@ -2,12 +2,11 @@ package pleaseload;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
-import com.github.psambit9791.jdsp.filter.Butterworth;
 import com.github.psambit9791.jdsp.transform.FastFourier;
 import java.io.*; 
 
 /**
- * The AudioProcessor class handles audio playback with equalization (EQ) effects using the JDSP external library.
+ * The AudioProcessor class handles audio playback with equalization (EQ) effects.
  */
 public class AudioProcessor {
 
@@ -15,6 +14,96 @@ public class AudioProcessor {
     private static boolean stopPlayback = false;
     private static boolean isPaused = false;
     private static final Object pauseLock = new Object();
+
+    // Stateful biquad filters that persist between audio frames
+    private static BiquadFilter[] bassFilters;
+    private static BiquadFilter[] midHighPassFilters;
+    private static BiquadFilter[] midLowPassFilters;
+    private static BiquadFilter[] trebleFilters;
+    private static float lastSampleRate = -1;
+    private static int lastChannels = -1;
+
+    /**
+     * Biquad IIR filter (Direct Form II Transposed) that maintains state between frames.
+     */
+    private static class BiquadFilter {
+        private double b0, b1, b2, a1, a2;
+        private double z1 = 0, z2 = 0;
+
+        public BiquadFilter(double b0, double b1, double b2, double a0, double a1, double a2) {
+            this.b0 = b0 / a0;
+            this.b1 = b1 / a0;
+            this.b2 = b2 / a0;
+            this.a1 = a1 / a0;
+            this.a2 = a2 / a0;
+        }
+
+        public void reset() {
+            z1 = 0;
+            z2 = 0;
+        }
+
+        public double process(double input) {
+            double output = b0 * input + z1;
+            z1 = b1 * input - a1 * output + z2;
+            z2 = b2 * input - a2 * output;
+            return output;
+        }
+
+        public static BiquadFilter lowPass(double sampleRate, double cutoff) {
+            double w0 = 2.0 * Math.PI * cutoff / sampleRate;
+            double alpha = Math.sin(w0) / (2.0 * Math.sqrt(2.0)); // Q = 1/sqrt(2) for Butterworth
+            double cosW0 = Math.cos(w0);
+            double b0 = (1.0 - cosW0) / 2.0;
+            double b1 = 1.0 - cosW0;
+            double b2 = (1.0 - cosW0) / 2.0;
+            double a0 = 1.0 + alpha;
+            double a1 = -2.0 * cosW0;
+            double a2 = 1.0 - alpha;
+            return new BiquadFilter(b0, b1, b2, a0, a1, a2);
+        }
+
+        public static BiquadFilter highPass(double sampleRate, double cutoff) {
+            double w0 = 2.0 * Math.PI * cutoff / sampleRate;
+            double alpha = Math.sin(w0) / (2.0 * Math.sqrt(2.0));
+            double cosW0 = Math.cos(w0);
+            double b0 = (1.0 + cosW0) / 2.0;
+            double b1 = -(1.0 + cosW0);
+            double b2 = (1.0 + cosW0) / 2.0;
+            double a0 = 1.0 + alpha;
+            double a1 = -2.0 * cosW0;
+            double a2 = 1.0 - alpha;
+            return new BiquadFilter(b0, b1, b2, a0, a1, a2);
+        }
+    }
+
+    /**
+     * Initializes the stateful filters if the format has changed.
+     */
+    private static void initFilters(float sampleRate, int channels) {
+        if (sampleRate != lastSampleRate || channels != lastChannels) {
+            lastSampleRate = sampleRate;
+            lastChannels = channels;
+            bassFilters = new BiquadFilter[channels];
+            midHighPassFilters = new BiquadFilter[channels];
+            midLowPassFilters = new BiquadFilter[channels];
+            trebleFilters = new BiquadFilter[channels];
+            for (int ch = 0; ch < channels; ch++) {
+                bassFilters[ch] = BiquadFilter.lowPass(sampleRate, 200.0);
+                midHighPassFilters[ch] = BiquadFilter.highPass(sampleRate, 200.0);
+                midLowPassFilters[ch] = BiquadFilter.lowPass(sampleRate, 2000.0);
+                trebleFilters[ch] = BiquadFilter.highPass(sampleRate, 2000.0);
+            }
+        }
+    }
+
+    /**
+     * Resets filter states for new playback.
+     */
+    private static void resetFilters() {
+        lastSampleRate = -1;
+        lastChannels = -1;
+    }
 
     /**
      * Stops audio playback.
@@ -60,6 +149,9 @@ public class AudioProcessor {
         }
         
         float[] gains = new float[] {initialBassGain, initialMidGain, initialTrebleGain};
+
+        // Reset filters for new playback session
+        resetFilters();
 
         // tries to open the audio file and gets its format
         try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile)) { //"Opens" file
@@ -244,7 +336,8 @@ public class AudioProcessor {
     }
 
     /**
-     * Applies equalization to an audio buffer by applying Butterworth filters for bass, mid, and treble frequencies.
+     * Applies equalization to an audio buffer using stateful biquad filters for bass, mid, and treble frequencies.
+     * Filters maintain their internal state between frames to prevent discontinuities and distortion.
      *
      * @param buffer The audio buffer to be equalized.
      * @param format The audio format of the buffer.
@@ -255,36 +348,35 @@ public class AudioProcessor {
      */
     private static byte[] applyEQ(byte[] buffer, AudioFormat format, float bassGain, float midGain, float trebleGain) {
         float sampleRate = format.getSampleRate();
-        
+        int channels = format.getChannels();
+
+        // Initialize filters (only recreates if format changed)
+        initFilters(sampleRate, channels);
+
         // Convert byte buffer to double array
         double[] audioData = byteToDouble(buffer, format);
-        
-        // Apply Butterworth filters
-        Butterworth butterworth = new Butterworth(sampleRate);
 
-        // Bass: Low-pass filter (Isolates bass frequencies)
-        double[] bassFiltered = butterworth.lowPassFilter(audioData, 2, 200.0);
-        for (int i = 0; i < bassFiltered.length; i++) {
-            bassFiltered[i] *= Math.pow(10, bassGain / 20);
-        }
+        // Pre-compute linear gains from dB
+        double bassLinear = Math.pow(10, bassGain / 20.0);
+        double midLinear = Math.pow(10, midGain / 20.0);
+        double trebleLinear = Math.pow(10, trebleGain / 20.0);
 
-        // Mid: Band-pass filter
-        double[] midFiltered = butterworth.bandPassFilter(audioData, 2, 200.0, 2000.0);
-        for (int i = 0; i < midFiltered.length; i++) {
-            // Adjust mid-range volume using the mid gain (converted from dB to a linear scale)
-            midFiltered[i] *= Math.pow(10, midGain / 20);
-        }
-
-        // Treble: High-pass filter
-        double[] trebleFiltered = butterworth.highPassFilter(audioData, 2, 2000.0);
-        for (int i = 0; i < trebleFiltered.length; i++) {
-            trebleFiltered[i] *= Math.pow(10, trebleGain / 20);
-        }
-
-        // Combine filtered signals
+        // Process sample-by-sample with stateful filters (handles channels correctly)
         double[] combined = new double[audioData.length];
-        for (int i = 0; i < combined.length; i++) {
-            combined[i] = bassFiltered[i] + midFiltered[i] + trebleFiltered[i];
+        for (int i = 0; i < audioData.length; i++) {
+            int ch = i % channels;
+            double sample = audioData[i];
+
+            // Bass: Low-pass filter at 200 Hz
+            double bassSample = bassFilters[ch].process(sample) * bassLinear;
+
+            // Mid: Band-pass (high-pass at 200 Hz cascaded with low-pass at 2000 Hz)
+            double midSample = midLowPassFilters[ch].process(midHighPassFilters[ch].process(sample)) * midLinear;
+
+            // Treble: High-pass filter at 2000 Hz
+            double trebleSample = trebleFilters[ch].process(sample) * trebleLinear;
+
+            combined[i] = bassSample + midSample + trebleSample;
             // Clamp signal within the valid range
             combined[i] = Math.max(-1.0, Math.min(1.0, combined[i]));
         }
