@@ -46,6 +46,9 @@ public class AudioProcessor {
     
     // dB Meter
     private static double currentdB = -60.0;
+    
+    // Smoothed limiter envelope (persists across buffers to avoid pumping)
+    private static double limiterEnvelope = 0.0;
 
     /**
      * Stops audio playback.
@@ -136,6 +139,7 @@ public class AudioProcessor {
         echoBuffer = null;
         echoBufferIndex = 0;
         currentTrackGain = 1.0f;
+        limiterEnvelope = 0.0;
         int sessionId;
         synchronized (AudioProcessor.class) {
             playbackSession++;
@@ -271,7 +275,7 @@ public class AudioProcessor {
             
             System.out.println(gain);
 
-            return Math.min(gain, 20.0f);
+            return Math.min(gain, 4.0f);
             
             
         } catch (Exception e) {
@@ -281,7 +285,7 @@ public class AudioProcessor {
     }
     
     /**
-     * Applies volume control and auto-leveling.
+     * Applies volume control and auto-leveling with smooth limiting.
      */
     private static byte[] applyVolumeControl(byte[] buffer, AudioFormat format) {
         double[] audioData = byteToDouble(buffer, format);
@@ -291,16 +295,25 @@ public class AudioProcessor {
             totalGain *= currentTrackGain;
         }
         
-        double maxAbs = 0.0;
+        // Apply gain
         for (int i = 0; i < audioData.length; i++) {
             audioData[i] *= totalGain;
-            maxAbs = Math.max(maxAbs, Math.abs(audioData[i]));
         }
-
-        if (maxAbs > 1.0) {
-            double scale = 0.98 / maxAbs;
-            for (int i = 0; i < audioData.length; i++) {
-                audioData[i] *= scale;
+        
+        // Smoothed envelope limiter (avoids per-buffer pumping)
+        double attackCoeff = 0.002;   // fast attack to catch peaks
+        double releaseCoeff = 0.0001; // slow release for smooth recovery
+        
+        for (int i = 0; i < audioData.length; i++) {
+            double absVal = Math.abs(audioData[i]);
+            if (absVal > limiterEnvelope) {
+                limiterEnvelope += attackCoeff * (absVal - limiterEnvelope);
+            } else {
+                limiterEnvelope += releaseCoeff * (absVal - limiterEnvelope);
+            }
+            
+            if (limiterEnvelope > 0.98) {
+                audioData[i] *= 0.98 / limiterEnvelope;
             }
         }
         
@@ -544,7 +557,6 @@ public class AudioProcessor {
         double[] combined = new double[audioData.length];
         for (int i = 0; i < combined.length; i++) {
             combined[i] = bassFiltered[i] + midFiltered[i] + trebleFiltered[i];
-            combined[i] = Math.max(-1.5, Math.min(1.5, combined[i]));
         }
 
         return doubleToByte(applyLimiter(combined), format);
