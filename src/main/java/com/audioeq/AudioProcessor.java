@@ -416,13 +416,13 @@ public class AudioProcessor {
             // Convert to dB scale (compresses dynamic range)
             double dB = (avg > 1e-10) ? 20.0 * Math.log10(avg) : -100.0;
 
-            // Apply spectral tilt compensation: boost higher bands ~4.5 dB per octave
+            // Apply spectral tilt compensation: boost higher bands ~3 dB per octave
             double centerFreq = Math.sqrt(lowFreq * highFreq);
             double octavesAboveRef = Math.log(centerFreq / referenceFreq) / Math.log(2.0);
-            dB += octavesAboveRef * 4.5;
+            dB += octavesAboveRef * 3.0;
 
-            // Map dB to a 0–100 visual range (floor at -60 dB, ceiling at 0 dB)
-            double normalized = (dB + 60.0) / 60.0;
+            // Map dB to a 0–100 visual range (floor at -50 dB, ceiling at -5 dB)
+            double normalized = (dB + 50.0) / 45.0;
             normalized = Math.max(0.0, Math.min(1.0, normalized));
 
             heights[i] = (int) (normalized * 100);
