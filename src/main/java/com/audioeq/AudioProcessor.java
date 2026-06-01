@@ -362,6 +362,9 @@ public class AudioProcessor {
         float sampleRate = format.getSampleRate();
         int usableBins = perFreqMagnitude.length / 2;
 
+        // Normalize magnitudes by N/2 so a full-scale sine → magnitude ~1.0 (0 dB)
+        double fftNorm = perFreqMagnitude.length / 2.0;
+
         double minFreq = 60.0;
         double maxFreq = Math.min(16000.0, sampleRate / 2.0 - 1);
         double freqPerBin = sampleRate / (double) perFreqMagnitude.length;
@@ -380,7 +383,7 @@ public class AudioProcessor {
             double sum = 0;
             int count = 0;
             for (int j = startBin; j <= endBin; j++) {
-                sum += perFreqMagnitude[j];
+                sum += perFreqMagnitude[j] / fftNorm;
                 count++;
             }
 
