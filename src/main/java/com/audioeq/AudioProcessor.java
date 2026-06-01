@@ -351,7 +351,7 @@ public class AudioProcessor {
 
     /**
      * Calculates bar heights for visualizer using logarithmically spaced frequency bands.
-     * This matches human hearing perception where each octave gets equal visual weight.
+     * Uses dB scaling and spectral tilt compensation for uniform visual distribution.
      */
     private static int[] calculateBarHeights(byte[] buffer, int numBars, AudioFormat format) {
         double[] newBuffer = byteToDouble(buffer, format);
@@ -360,17 +360,17 @@ public class AudioProcessor {
         double[] perFreqMagnitude = fft.getMagnitude(true);
 
         float sampleRate = format.getSampleRate();
-        // Only use the first half of the FFT (positive frequencies up to Nyquist)
         int usableBins = perFreqMagnitude.length / 2;
 
-        // Logarithmically spaced band edges from ~60 Hz to ~16 kHz (or Nyquist if lower)
         double minFreq = 60.0;
         double maxFreq = Math.min(16000.0, sampleRate / 2.0 - 1);
         double freqPerBin = sampleRate / (double) perFreqMagnitude.length;
 
+        // Per-band gain compensation for typical spectral slope (~4.5 dB/octave boost)
+        double referenceFreq = minFreq;
+
         int[] heights = new int[numBars];
         for (int i = 0; i < numBars; i++) {
-            // Logarithmic band edges
             double lowFreq = minFreq * Math.pow(maxFreq / minFreq, (double) i / numBars);
             double highFreq = minFreq * Math.pow(maxFreq / minFreq, (double) (i + 1) / numBars);
 
@@ -384,9 +384,21 @@ public class AudioProcessor {
                 count++;
             }
 
-            // Average magnitude for this band (avoids higher bars just because more bins)
             double avg = (count > 0) ? sum / count : 0;
-            heights[i] = (int) avg;
+
+            // Convert to dB scale (compresses dynamic range)
+            double dB = (avg > 1e-10) ? 20.0 * Math.log10(avg) : -100.0;
+
+            // Apply spectral tilt compensation: boost higher bands ~4.5 dB per octave
+            double centerFreq = Math.sqrt(lowFreq * highFreq);
+            double octavesAboveRef = Math.log(centerFreq / referenceFreq) / Math.log(2.0);
+            dB += octavesAboveRef * 4.5;
+
+            // Map dB to a 0–100 visual range (floor at -60 dB, ceiling at 0 dB)
+            double normalized = (dB + 60.0) / 60.0;
+            normalized = Math.max(0.0, Math.min(1.0, normalized));
+
+            heights[i] = (int) (normalized * 100);
         }
         return heights;
     }
