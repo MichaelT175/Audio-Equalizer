@@ -392,18 +392,44 @@ public class AudioProcessor {
     }
 
     /**
-     * Returns spectrum data for spectrum analyzer.
+     * Returns logarithmically-spaced spectrum data for the spectrum analyzer.
+     * Produces numBins output points spaced from 60 Hz to 16 kHz on a log scale,
+     * matching human frequency perception.
      */
     private static double[] notSorted(byte[] buffer, int numBars, AudioFormat format) {
         double[] newBuffer = byteToDouble(buffer, format);
         FastFourier fft = new FastFourier(newBuffer);
         fft.transform();
         double[] perFreqMagnitude = fft.getMagnitude(true);
-        double[] arr = new double[perFreqMagnitude.length / 2];
-        for (int i = 0; i < arr.length; i++) {
-            arr[i] = perFreqMagnitude[i];
+
+        float sampleRate = format.getSampleRate();
+        int usableBins = perFreqMagnitude.length / 2;
+        double freqPerBin = sampleRate / (double) perFreqMagnitude.length;
+
+        // Output bins for the spectrum display
+        int outputBins = 128;
+        double minFreq = 60.0;
+        double maxFreq = Math.min(16000.0, sampleRate / 2.0 - 1);
+
+        double[] result = new double[outputBins];
+        for (int i = 0; i < outputBins; i++) {
+            // Logarithmic band edges
+            double lowFreq = minFreq * Math.pow(maxFreq / minFreq, (double) i / outputBins);
+            double highFreq = minFreq * Math.pow(maxFreq / minFreq, (double) (i + 1) / outputBins);
+
+            int startBin = Math.max(1, (int) (lowFreq / freqPerBin));
+            int endBin = Math.min(usableBins - 1, (int) (highFreq / freqPerBin));
+
+            double sum = 0;
+            int count = 0;
+            for (int j = startBin; j <= endBin; j++) {
+                sum += perFreqMagnitude[j];
+                count++;
+            }
+
+            result[i] = (count > 0) ? sum / count : 0;
         }
-        return arr;
+        return result;
     }
 
     private static AudioFormat toPcmFormat(AudioFormat sourceFormat) {

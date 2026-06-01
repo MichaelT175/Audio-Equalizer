@@ -284,7 +284,7 @@ public class EqualizerApp extends Application {
         waveformContainer = createGlassPanel(waveformCanvas, "WAVEFORM");
         
         // Spectrum analyzer
-        spectrumCanvas = new SpectrumCanvasFX(1024);
+        spectrumCanvas = new SpectrumCanvasFX(128);
         spectrumCanvas.setWidth(1000);
         spectrumCanvas.setHeight(120);
         spectrumContainer = createGlassPanel(spectrumCanvas, "FREQUENCY SPECTRUM");
